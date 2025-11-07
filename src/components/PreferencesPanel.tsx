@@ -16,7 +16,6 @@ const PreferencesPanel = ({ onRecommendationsGenerated }: PreferencesPanelProps)
   const [location, setLocation] = useState("");
   const [activities, setActivities] = useState("");
   const [foodPreferences, setFoodPreferences] = useState("");
-  const [apiKey, setApiKey] = useState("");
 
   const handleGenerate = async () => {
     if (!startAddress || !location) {
@@ -24,39 +23,73 @@ const PreferencesPanel = ({ onRecommendationsGenerated }: PreferencesPanelProps)
       return;
     }
 
-    if (!apiKey) {
-      toast.error("Please enter your Google Maps API key");
-      return;
-    }
-
-    // Mock recommendations for now - will be replaced with real Google Places API calls
+    // Enhanced mock recommendations based on user preferences
     const mockPlaces: Place[] = [
       {
         id: "1",
-        name: "Ista Indian Cuisine",
+        name: "The Garden Bistro",
         type: "Restaurant",
-        description: "Praised for authentic Indian food with fused flavors and a diverse menu, including many vegetarian options. Their lunch buffet is a popular choice for perfectly prepared dishes.",
-        address: "2221 Cross Timbers Rd, Ste 105, Flower Mound, TX 75028",
-        highlights: ["Authentic flavors", "diverse menu", "vegetarian options"],
-        userRating: "Not provided, but highly praised"
+        rating: 4.7,
+        description: "Farm-to-table restaurant featuring seasonal menus with locally sourced ingredients. Known for their creative vegetarian options and craft cocktails.",
+        address: `123 Main Street, ${location}`,
+        highlights: ["Farm-to-table", "Seasonal menu", "Craft cocktails"],
+        lat: 33.0145,
+        lng: -97.0969
       },
       {
         id: "2",
-        name: "Cafe India",
+        name: "Sakura Sushi & Ramen",
         type: "Restaurant",
         rating: 4.5,
-        description: "A beloved local spot offering traditional recipes with family-friendly outdoor seating.",
-        address: "1234 Main Street, Flower Mound, TX",
-        highlights: ["Traditional recipes", "family-friendly", "outdoor seating"]
+        description: "Authentic Japanese cuisine with fresh sushi rolls and rich ramen bowls. Family-owned with a cozy atmosphere.",
+        address: `456 Oak Avenue, ${location}`,
+        highlights: ["Fresh sushi", "Authentic ramen", "Family-owned"],
+        lat: 33.0167,
+        lng: -97.0985
       },
       {
         id: "3",
         name: "Riverside Trail Park",
         type: "Outdoor Activity",
         rating: 4.8,
-        description: "Beautiful park along the river with well-maintained walking trails and picnic areas.",
-        address: "5678 River Road, Flower Mound, TX",
-        highlights: ["Scenic views", "walking trails", "picnic areas"]
+        description: "Beautiful park along the river with well-maintained walking trails, picnic areas, and stunning sunset views.",
+        address: `789 River Road, ${location}`,
+        highlights: ["Scenic trails", "Picnic areas", "Sunset views"],
+        lat: 33.0189,
+        lng: -97.1001
+      },
+      {
+        id: "4",
+        name: "Local Art Museum",
+        type: "Cultural Activity",
+        rating: 4.6,
+        description: "Contemporary art museum featuring rotating exhibitions from local and international artists. Free admission on Thursdays.",
+        address: `321 Culture Drive, ${location}`,
+        highlights: ["Contemporary art", "Rotating exhibits", "Free Thursdays"],
+        lat: 33.0134,
+        lng: -97.0947
+      },
+      {
+        id: "5",
+        name: "Mountain View Cafe",
+        type: "Restaurant",
+        rating: 4.4,
+        description: "Casual cafe with panoramic views, serving brunch favorites and specialty coffee. Pet-friendly patio available.",
+        address: `555 Hill Street, ${location}`,
+        highlights: ["Brunch favorites", "Specialty coffee", "Pet-friendly"],
+        lat: 33.0201,
+        lng: -97.1015
+      },
+      {
+        id: "6",
+        name: "Adventure Climbing Gym",
+        type: "Outdoor Activity",
+        rating: 4.7,
+        description: "Indoor rock climbing facility with routes for all skill levels. Offers classes and equipment rental.",
+        address: `888 Fitness Way, ${location}`,
+        highlights: ["All skill levels", "Classes available", "Equipment rental"],
+        lat: 33.0178,
+        lng: -97.0993
       }
     ];
 
@@ -73,32 +106,6 @@ const PreferencesPanel = ({ onRecommendationsGenerated }: PreferencesPanelProps)
         </div>
 
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="apiKey" className="text-sm font-medium flex items-center gap-2">
-              <MapPin className="w-4 h-4" />
-              Google Maps API Key
-            </Label>
-            <Input
-              id="apiKey"
-              type="password"
-              placeholder="Enter your API key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="bg-background"
-            />
-            <p className="text-xs text-muted-foreground">
-              Get your API key from{" "}
-              <a 
-                href="https://console.cloud.google.com/apis/credentials" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                Google Cloud Console
-              </a>
-            </p>
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="address" className="text-sm font-medium flex items-center gap-2">
               <MapPin className="w-4 h-4" />
