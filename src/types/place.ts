@@ -9,4 +9,5 @@ export interface Place {
   userRating?: string;
   lat?: number;
   lng?: number;
+  imageUrl?: string;
 }
