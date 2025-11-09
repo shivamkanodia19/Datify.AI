@@ -80,6 +80,147 @@ export type Database = {
         }
         Relationships: []
       }
+      session_matches: {
+        Row: {
+          created_at: string
+          id: string
+          is_final_choice: boolean
+          place_data: Json
+          place_id: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_final_choice?: boolean
+          place_data: Json
+          place_id: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_final_choice?: boolean
+          place_data?: Json
+          place_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_matches_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_participants: {
+        Row: {
+          id: string
+          joined_at: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_participants_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_swipes: {
+        Row: {
+          created_at: string
+          direction: string
+          id: string
+          place_data: Json
+          place_id: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          direction: string
+          id?: string
+          place_data: Json
+          place_id: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          direction?: string
+          id?: string
+          place_data?: Json
+          place_id?: string
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_swipes_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          activities: string | null
+          created_at: string
+          created_by: string
+          food_preferences: string | null
+          id: string
+          radius: number
+          session_code: string
+          start_address: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          activities?: string | null
+          created_at?: string
+          created_by: string
+          food_preferences?: string | null
+          id?: string
+          radius?: number
+          session_code: string
+          start_address: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          activities?: string | null
+          created_at?: string
+          created_by?: string
+          food_preferences?: string | null
+          id?: string
+          radius?: number
+          session_code?: string
+          start_address?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
