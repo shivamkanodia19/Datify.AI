@@ -5,8 +5,9 @@ import SwipeCard from "./SwipeCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Heart, PartyPopper, ArrowLeft } from "lucide-react";
+import { Heart, PartyPopper, ArrowLeft, RotateCcw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { Progress } from "@/components/ui/progress";
 
 interface SwipeViewProps {
   sessionId: string;
@@ -28,6 +29,18 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   const [isLoading, setIsLoading] = useState(false);
   const [round, setRound] = useState<1 | 2>(1);
   const [deck, setDeck] = useState<Place[]>(recommendations);
+
+  // Check if Round 1 is complete and should transition to Round 2
+  useEffect(() => {
+    if (round === 1 && currentIndex >= recommendations.length && matches.length > 0) {
+      // Round 1 complete with matches - start Round 2
+      const matchPlaces = matches.map(m => m.place_data);
+      setDeck(matchPlaces);
+      setCurrentIndex(0);
+      setRound(2);
+      toast.success("🎉 Round 2: Swipe on your mutual matches!");
+    }
+  }, [currentIndex, recommendations.length, matches, round]);
   useEffect(() => {
     loadMatches();
 
@@ -71,9 +84,9 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   };
 
   const handleSwipe = async (direction: 'left' | 'right') => {
-    if (currentIndex >= recommendations.length) return;
+    if (currentIndex >= deck.length) return;
 
-    const place = recommendations[currentIndex];
+    const place = deck[currentIndex];
     setIsLoading(true);
 
     try {
@@ -99,6 +112,18 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     }
   };
 
+  const handleRestart = () => {
+    if (matches.length === 0) {
+      toast.error("No mutual matches to replay yet!");
+      return;
+    }
+    const matchPlaces = matches.map(m => m.place_data);
+    setDeck(matchPlaces);
+    setCurrentIndex(0);
+    setRound(2);
+    toast.success("Replaying mutual matches!");
+  };
+
   const handleFinalChoice = async (matchId: string) => {
     try {
       await supabase
@@ -113,10 +138,12 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     }
   };
 
-  const currentPlace = recommendations[currentIndex];
+  const currentPlace = deck[currentIndex];
+  const progressPercent = deck.length > 0 ? ((currentIndex / deck.length) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background p-4 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between max-w-md mx-auto">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -127,6 +154,52 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
           <Badge variant="secondary" className="text-lg">{sessionCode}</Badge>
         </div>
       </div>
+
+      {/* Round Banner */}
+      <Card className={`max-w-md mx-auto ${round === 2 ? 'border-primary bg-primary/5' : ''}`}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              {round === 1 ? (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  Round 1: Initial Swipes
+                </>
+              ) : (
+                <>
+                  <Heart className="w-5 h-5 text-primary" />
+                  Round 2: Mutual Matches
+                </>
+              )}
+            </CardTitle>
+            {matches.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRestart}
+                disabled={round === 2 && currentIndex < deck.length}
+              >
+                <RotateCcw className="w-3 h-3 mr-1" />
+                Replay
+              </Button>
+            )}
+          </div>
+          <CardDescription>
+            {round === 1 
+              ? "Swipe through all places. Matches appear when both users like the same place!"
+              : "Narrow down your favorites from the places you both liked!"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>Progress</span>
+              <span>{currentIndex} of {deck.length}</span>
+            </div>
+            <Progress value={progressPercent} className="h-2" />
+          </div>
+        </CardContent>
+      </Card>
 
       {matches.length > 0 && (
         <Card className="max-w-md mx-auto border-primary">
@@ -179,22 +252,32 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
         ) : (
           <Card className="w-full max-w-md">
             <CardHeader>
-              <CardTitle>All Done!</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                {round === 1 ? "Round 1 Complete! 🎉" : "Round 2 Complete! 🎊"}
+              </CardTitle>
               <CardDescription>
-                {matches.length > 0
-                  ? "Check your matches above and choose your final destination!"
-                  : "No more places to swipe. Try adjusting your preferences for more recommendations."}
+                {round === 1 && matches.length > 0 && (
+                  "Great! You found mutual matches. Starting Round 2..."
+                )}
+                {round === 1 && matches.length === 0 && (
+                  "No mutual matches found. Try adjusting your preferences for new recommendations."
+                )}
+                {round === 2 && (
+                  "All done! Check your mutual matches above and choose your final destination."
+                )}
               </CardDescription>
             </CardHeader>
+            {matches.length > 0 && (
+              <CardContent>
+                <Button onClick={handleRestart} className="w-full">
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Replay Matches
+                </Button>
+              </CardContent>
+            )}
           </Card>
         )}
       </div>
-
-      {currentPlace && (
-        <p className="text-center text-sm text-muted-foreground">
-          {currentIndex + 1} of {recommendations.length}
-        </p>
-      )}
     </div>
   );
 };
