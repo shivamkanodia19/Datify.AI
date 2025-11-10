@@ -80,8 +80,8 @@ const Index = () => {
         setView('swipe');
         return;
       }
-
-      setView('waiting');
+      
+      // View should already be set to 'waiting' before this function is called
 
       // Subscribe to both participant changes and session start
       const channel = supabase
@@ -188,6 +188,13 @@ const Index = () => {
       setSessionId(session.id);
       setSessionCode(code);
       toast.success(`Session created! Code: ${code}`);
+      
+      // Transition to waiting room immediately since session hasn't started yet
+      setView('waiting');
+      setIsHost(true);
+      setParticipantsCount(1);
+      
+      // Then watch for participant changes
       await watchParticipants(session.id, user.id);
     } catch (error) {
       console.error('Error creating session:', error);
@@ -360,15 +367,10 @@ const Index = () => {
                 {participantsCount === 10 && ' - Starting automatically!'}
               </p>
               <div className="flex gap-2 justify-center">
-                {isHost && participantsCount >= 2 && participantsCount < 10 && (
+              {isHost && participantsCount >= 1 && participantsCount < 10 && (
                   <Button onClick={handleStartRound} className="flex-1">
-                    Start Round ({participantsCount} players)
+                    Start Round ({participantsCount} player{participantsCount !== 1 ? 's' : ''})
                   </Button>
-                )}
-                {isHost && participantsCount === 1 && (
-                  <div className="text-sm text-muted-foreground text-center">
-                    Waiting for at least 1 more participant to start...
-                  </div>
                 )}
                 <Button variant="outline" onClick={() => setView('mode-select')}>
                   Cancel
