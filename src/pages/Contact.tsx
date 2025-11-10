@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft } from "lucide-react";
 import { z } from "zod";
+import { supabase } from "@/integrations/supabase/client";
 
 const contactSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100, "Name must be less than 100 characters"),
@@ -34,8 +35,11 @@ const Contact = () => {
     try {
       const validatedData = contactSchema.parse(formData);
       
-      // Simulate sending message (you can integrate with an email service later)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await supabase.functions.invoke('send-contact-email', {
+        body: validatedData,
+      });
+
+      if (error) throw error;
 
       toast({
         title: "Message Sent!",
@@ -51,6 +55,7 @@ const Contact = () => {
           variant: "destructive",
         });
       } else {
+        console.error("Contact form error:", error);
         toast({
           title: "Error",
           description: "Failed to send message. Please try again.",
