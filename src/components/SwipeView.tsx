@@ -33,13 +33,13 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
 
   // Check if Round 1 is complete and should transition to Round 2
   useEffect(() => {
-    if (round === 1 && currentIndex >= recommendations.length && matches.length > 0) {
-      // Round 1 complete with matches - start Round 2
+    if (round === 1 && currentIndex >= recommendations.length && matches.length > 1) {
+      // Round 1 complete with multiple matches - start Round 2
       const matchPlaces = matches.map(m => m.place_data);
       setDeck(matchPlaces);
       setCurrentIndex(0);
       setRound(2);
-      toast.success("🎉 Round 2: Swipe on your mutual matches!");
+      toast.success(`🎉 Round 2: ${matches.length} mutual matches! Swipe to narrow down.`);
     }
   }, [currentIndex, recommendations.length, matches, round]);
   useEffect(() => {
@@ -91,7 +91,10 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
           like_count: count ?? 0
         };
       }));
-      setMatches(typedMatches as any);
+      
+      // Sort by like_count descending (most liked first)
+      const sortedMatches = typedMatches.sort((a, b) => (b.like_count ?? 0) - (a.like_count ?? 0));
+      setMatches(sortedMatches as any);
     }
   };
 
@@ -198,8 +201,8 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
           </div>
           <CardDescription>
             {round === 1 
-              ? "Swipe through all places. Matches appear when both users like the same place!"
-              : "Narrow down your favorites from the places you both liked!"}
+              ? "Swipe through all places. Matches appear when ALL participants like the same place!"
+              : "Narrow down your favorites from the mutual matches (sorted by popularity)!"}
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
@@ -221,7 +224,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
               Mutual Matches ({matches.length})
             </CardTitle>
             <CardDescription>
-              Places you both liked!
+              Places ALL participants liked (sorted by most to least liked)
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -275,14 +278,17 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
                 {round === 1 ? "Round 1 Complete! 🎉" : "Round 2 Complete! 🎊"}
               </CardTitle>
               <CardDescription>
-                {round === 1 && matches.length > 0 && (
+                {round === 1 && matches.length > 1 && (
                   "Great! You found mutual matches. Starting Round 2..."
                 )}
+                {round === 1 && matches.length === 1 && (
+                  "Perfect! Only 1 mutual match - that's your unanimous choice!"
+                )}
                 {round === 1 && matches.length === 0 && (
-                  "No mutual matches found. Try adjusting your preferences for new recommendations."
+                  "No mutual matches where ALL participants agreed. Try adjusting preferences."
                 )}
                 {round === 2 && (
-                  "All done! Check your mutual matches above and choose your final destination."
+                  "All done! Check your mutual matches above (sorted by popularity) and choose your final destination."
                 )}
               </CardDescription>
             </CardHeader>

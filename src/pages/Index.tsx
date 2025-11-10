@@ -155,12 +155,18 @@ const Index = () => {
 
       if (error) throw error;
 
-      await supabase
+      // Add host as participant
+      const { error: participantError } = await supabase
         .from('session_participants')
         .insert({
           session_id: session.id,
           user_id: user.id,
         });
+
+      if (participantError) {
+        console.error('Error adding host as participant:', participantError);
+        throw participantError;
+      }
 
       // Generate recommendations
       const response = await fetch(
@@ -337,7 +343,9 @@ const Index = () => {
                 Waiting Room
               </CardTitle>
               <CardDescription>
-                Share this code with others. {isHost ? 'Start the round when ready!' : 'Waiting for host to start...'}
+                {isHost 
+                  ? `${participantsCount}/10 participants. Start when ready or wait until 10 join.`
+                  : 'Waiting for host to start the round...'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -348,13 +356,19 @@ const Index = () => {
                 </div>
               </div>
               <p className="text-center text-muted-foreground">
-                {participantsCount} participant{participantsCount !== 1 ? 's' : ''} joined
+                {participantsCount} of 10 participant{participantsCount !== 1 ? 's' : ''} joined
+                {participantsCount === 10 && ' - Starting automatically!'}
               </p>
               <div className="flex gap-2 justify-center">
-                {isHost && participantsCount >= 2 && (
+                {isHost && participantsCount >= 2 && participantsCount < 10 && (
                   <Button onClick={handleStartRound} className="flex-1">
-                    Start Round
+                    Start Round ({participantsCount} players)
                   </Button>
+                )}
+                {isHost && participantsCount === 1 && (
+                  <div className="text-sm text-muted-foreground text-center">
+                    Waiting for at least 1 more participant to start...
+                  </div>
                 )}
                 <Button variant="outline" onClick={() => setView('mode-select')}>
                   Cancel
