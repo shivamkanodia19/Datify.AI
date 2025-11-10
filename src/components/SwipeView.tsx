@@ -26,7 +26,8 @@ interface Match {
 
 const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeViewProps) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [allMatches, setAllMatches] = useState<Match[]>([]); // All Round 1 unanimous matches
+  const [allMatches, setAllMatches] = useState<Match[]>([]); // All unanimous matches
+  const [roundMatches, setRoundMatches] = useState<Match[]>([]); // Matches from current round
   const [currentRoundCandidates, setCurrentRoundCandidates] = useState<Place[]>([]); // Places advancing to next round
   const [isLoading, setIsLoading] = useState(false);
   const [round, setRound] = useState(1);
@@ -35,6 +36,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   const [isVoteMode, setIsVoteMode] = useState(false);
   const [gameEnded, setGameEnded] = useState(false);
   const [swipeCounts, setSwipeCounts] = useState<Record<string, number>>({});
+  const [showRoundSummary, setShowRoundSummary] = useState(false);
 
   // Load participant count
   useEffect(() => {
@@ -50,16 +52,24 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     setParticipantCount(count ?? 0);
   };
 
-  // Check if current round is complete and calculate next round
+  // Subscribe to session updates to sync round progression
   useEffect(() => {
-    if (currentIndex < deck.length || participantCount === 0) return;
-
-    checkRoundCompletion();
-  }, [currentIndex, deck.length, participantCount]);
-  // Load Round 1 unanimous matches and subscribe to real-time updates
-  useEffect(() => {
-    loadMatches();
-    subscribeToSwipes();
+    const sessionChannel = supabase
+      .channel(`session_sync_${sessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sessions',
+          filter: `id=eq.${sessionId}`,
+        },
+        () => {
+          // Session updated, reload state
+          checkRoundCompletion();
+        }
+      )
+      .subscribe();
 
     const matchChannel = supabase
       .channel(`session_matches_${sessionId}`)
@@ -71,10 +81,8 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
           table: 'session_matches',
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload) => {
-          const newMatch = payload.new as Match;
-          loadMatches(); // Reload all matches to get accurate like counts
-          toast.success(`🎉 It's a match! ${newMatch.place_data.name}`);
+        () => {
+          loadMatches(); // Reload all matches silently
         }
       )
       .on(
@@ -91,10 +99,19 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       )
       .subscribe();
 
+    subscribeToSwipes();
+
     return () => {
+      supabase.removeChannel(sessionChannel);
       supabase.removeChannel(matchChannel);
     };
   }, [sessionId]);
+
+  // Check round completion when index changes
+  useEffect(() => {
+    if (currentIndex < deck.length || participantCount === 0) return;
+    checkRoundCompletion();
+  }, [currentIndex, deck.length, participantCount]);
 
   const subscribeToSwipes = () => {
     const swipeChannel = supabase
@@ -108,8 +125,9 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
           filter: `session_id=eq.${sessionId}`,
         },
         () => {
-          // Reload swipe counts when anyone swipes
+          // Reload swipe counts and check round completion when anyone swipes
           loadSwipeCounts();
+          checkRoundCompletion();
         }
       )
       .subscribe();
@@ -176,6 +194,12 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     }
   };
 
+  // Initial load of matches and swipe counts
+  useEffect(() => {
+    loadMatches();
+    loadSwipeCounts();
+  }, [sessionId]);
+
   const checkRoundCompletion = async () => {
     // Get all swipes for this round's deck
     const placeIds = deck.map(p => p.id);
@@ -215,31 +239,67 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       }
     });
 
-    // Get places that received at least 1 like
-    const advancingPlaces = deck.filter(place => likeCounts[place.id] > 0);
+    // Get unanimous matches for this round (all participants liked)
+    const unanimousMatches = deck.filter(place => likeCounts[place.id] === participantCount);
+    
+    // Get all places with at least 1 like (for advancing)
+    const likedPlaces = deck.filter(place => likeCounts[place.id] > 0);
+    
+    // Remove unanimous matches from advancing places (they're already winners)
+    const advancingPlaces = likedPlaces.filter(place => 
+      !unanimousMatches.some(match => match.id === place.id)
+    );
     
     // Sort by like count (most liked first)
     const sortedPlaces = advancingPlaces.sort((a, b) => 
       likeCounts[b.id] - likeCounts[a.id]
     );
 
-    // Store for display
+    // Load current round matches for display
+    const currentRoundMatchesData = unanimousMatches.map(place => ({
+      id: `match-${place.id}`,
+      place_id: place.id,
+      place_data: place,
+      is_final_choice: false,
+      like_count: participantCount,
+    }));
+    
+    setRoundMatches(currentRoundMatchesData);
     setCurrentRoundCandidates(sortedPlaces);
+    setShowRoundSummary(true);
 
-    if (sortedPlaces.length === 0) {
+    if (unanimousMatches.length > 0) {
+      toast.success(`🎉 ${unanimousMatches.length} unanimous match${unanimousMatches.length > 1 ? 'es' : ''} this round!`);
+    }
+
+    if (sortedPlaces.length === 0 && unanimousMatches.length === 0) {
       // No agreement - end game
       setGameEnded(true);
       toast.error("No agreement reached. Game ended.");
-    } else if (sortedPlaces.length <= 2) {
-      // 2 or fewer - enter vote mode
+    } else if (sortedPlaces.length <= 2 && sortedPlaces.length > 0) {
+      // 2 or fewer advancing - enter vote mode
       setIsVoteMode(true);
       toast.success(`Final vote! Choose between ${sortedPlaces.length} option${sortedPlaces.length > 1 ? 's' : ''}.`);
-    } else {
-      // Continue to next round
-      setDeck(sortedPlaces);
+    } else if (sortedPlaces.length === 0) {
+      // Only unanimous matches, game complete
+      setGameEnded(true);
+      toast.success("All decisions made! Check your matches above.");
+    }
+    // If sortedPlaces > 2, wait for user to click "Continue to Next Round"
+  };
+
+  const advanceToNextRound = () => {
+    if (currentRoundCandidates.length > 2) {
+      // Merge current round matches into all matches
+      const newAllMatches = [...allMatches, ...roundMatches];
+      setAllMatches(newAllMatches);
+      
+      setDeck(currentRoundCandidates);
       setCurrentIndex(0);
       setRound(prev => prev + 1);
-      toast.success(`Round ${round + 1}: ${sortedPlaces.length} places advancing. Keep swiping!`);
+      setShowRoundSummary(false);
+      setRoundMatches([]);
+      toast.success(`Round ${round + 1}: ${currentRoundCandidates.length} places to swipe!`);
     }
   };
 
@@ -384,7 +444,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       </div>
 
       {/* Round Banner */}
-      {!gameEnded && !isVoteMode && (
+      {!gameEnded && !isVoteMode && !showRoundSummary && (
         <Card className={`max-w-md mx-auto ${round > 1 ? 'border-primary bg-primary/5' : ''}`}>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
@@ -402,8 +462,8 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
             </CardTitle>
             <CardDescription>
               {round === 1 
-                ? "Swipe through all places. Unanimous matches will advance!"
-                : `Keep swiping to narrow down. Places with likes advance to the next round!`}
+                ? "Swipe through all places. Unanimous matches will be revealed at the end!"
+                : `Keep swiping to narrow down. Matches shown at end of round!`}
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -413,6 +473,9 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
                 <span>{currentIndex} of {deck.length}</span>
               </div>
               <Progress value={progressPercent} className="h-2" />
+              <p className="text-xs text-muted-foreground text-center">
+                {participantCount} participant{participantCount !== 1 ? 's' : ''} in session
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -432,13 +495,33 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
         </Card>
       )}
 
-      {/* Show Round 1 unanimous matches */}
+      {/* Waiting message when user finishes before others */}
+      {currentIndex >= deck.length && !showRoundSummary && !isVoteMode && !gameEnded && (
+        <Card className="max-w-md mx-auto border-primary">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 animate-spin text-primary" />
+              Waiting for All Participants...
+            </CardTitle>
+            <CardDescription>
+              Round {round} will complete when everyone finishes swiping
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              {participantCount} participant{participantCount !== 1 ? 's' : ''} total
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Show all unanimous matches */}
       {allMatches.length > 0 && (
         <Card className="max-w-md mx-auto border-primary">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Heart className="w-5 h-5 text-primary" />
-              Round 1 Unanimous Matches ({allMatches.length})
+              All Unanimous Matches ({allMatches.length})
             </CardTitle>
             <CardDescription>
               Places ALL participants loved unanimously
@@ -472,38 +555,78 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
         </Card>
       )}
 
-      {/* Show advancing candidates after round completion */}
-      {currentRoundCandidates.length > 0 && currentIndex >= deck.length && !isVoteMode && !gameEnded && (
-        <Card className="max-w-md mx-auto border-primary">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" />
-              {allMatches.length > 0 ? "Waiting for All Participants..." : `Advancing to Round ${round + 1} (${currentRoundCandidates.length})`}
-            </CardTitle>
-            <CardDescription>
-              {allMatches.length > 0 
-                ? "Everyone needs to finish swiping before moving to the next round"
-                : "Places that received likes this round"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {currentRoundCandidates.map((place) => (
-              <div
-                key={place.id}
-                className="flex items-center justify-between p-3 border rounded-lg"
-              >
-                <div className="flex-1">
-                  <p className="font-medium">{place.name}</p>
-                  <p className="text-sm text-muted-foreground">{place.type}</p>
-                </div>
-                <Badge variant="secondary">
-                  <Heart className="w-3 h-3 mr-1" />
-                  {swipeCounts[place.id] || 0}/{participantCount}
-                </Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      {/* Round Summary - shown at end of each round */}
+      {showRoundSummary && !isVoteMode && !gameEnded && (
+        <>
+          {roundMatches.length > 0 && (
+            <Card className="max-w-md mx-auto border-green-500 bg-green-50 dark:bg-green-950">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                  <PartyPopper className="w-5 h-5" />
+                  Round {round} Unanimous Matches! ({roundMatches.length})
+                </CardTitle>
+                <CardDescription>
+                  Everyone agreed on these places
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {roundMatches.map((match) => (
+                  <div
+                    key={match.id}
+                    className="flex items-center justify-between p-3 border border-green-300 rounded-lg bg-white dark:bg-green-900"
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">{match.place_data.name}</p>
+                      <p className="text-sm text-muted-foreground">{match.place_data.type}</p>
+                    </div>
+                    <Badge variant="secondary" className="bg-green-100 dark:bg-green-800">
+                      <Heart className="w-3 h-3 mr-1" />
+                      {match.like_count}/{participantCount}
+                    </Badge>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {currentRoundCandidates.length > 0 && (
+            <Card className="max-w-md mx-auto border-primary">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Advancing to Next Round ({currentRoundCandidates.length})
+                </CardTitle>
+                <CardDescription>
+                  Places that received likes but not unanimous
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {currentRoundCandidates.map((place) => (
+                  <div
+                    key={place.id}
+                    className="flex items-center justify-between p-3 border rounded-lg"
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">{place.name}</p>
+                      <p className="text-sm text-muted-foreground">{place.type}</p>
+                    </div>
+                    <Badge variant="secondary">
+                      <Heart className="w-3 h-3 mr-1" />
+                      {swipeCounts[place.id] || 0}/{participantCount}
+                    </Badge>
+                  </div>
+                ))}
+                <Button 
+                  onClick={advanceToNextRound} 
+                  className="w-full"
+                  disabled={currentRoundCandidates.length <= 2}
+                >
+                  Continue to Round {round + 1}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       <div className="flex justify-center">
@@ -549,7 +672,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
               </CardDescription>
             </CardHeader>
           </Card>
-        ) : currentPlace ? (
+        ) : currentPlace && !showRoundSummary ? (
           <SwipeCard
             place={currentPlace}
             onSwipeLeft={() => handleSwipe('left')}
