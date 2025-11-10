@@ -37,11 +37,31 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   const [gameEnded, setGameEnded] = useState(false);
   const [swipeCounts, setSwipeCounts] = useState<Record<string, number>>({});
   const [showRoundSummary, setShowRoundSummary] = useState(false);
+  const [isHost, setIsHost] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Load participant count
+  // Check if current user is host and load participant count
   useEffect(() => {
+    checkIfHost();
     loadParticipantCount();
   }, [sessionId]);
+
+  const checkIfHost = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    
+    setCurrentUserId(user.id);
+    
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('created_by')
+      .eq('id', sessionId)
+      .single();
+    
+    if (session) {
+      setIsHost(session.created_by === user.id);
+    }
+  };
 
   const loadParticipantCount = async () => {
     const { count } = await supabase
@@ -288,7 +308,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     // If sortedPlaces > 2, wait for user to click "Continue to Next Round"
   };
 
-  const advanceToNextRound = () => {
+  const advanceToNextRound = async () => {
     if (currentRoundCandidates.length > 2) {
       // Merge current round matches into all matches
       const newAllMatches = [...allMatches, ...roundMatches];
@@ -299,6 +319,13 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       setRound(prev => prev + 1);
       setShowRoundSummary(false);
       setRoundMatches([]);
+      
+      // Update session to trigger sync for all participants
+      await supabase
+        .from('sessions')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', sessionId);
+      
       toast.success(`Round ${round + 1}: ${currentRoundCandidates.length} places to swipe!`);
     }
   };
@@ -515,8 +542,8 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
         </Card>
       )}
 
-      {/* Show all unanimous matches */}
-      {allMatches.length > 0 && (
+      {/* Show all unanimous matches - only in round summary or game ended */}
+      {allMatches.length > 0 && (showRoundSummary || gameEnded) && (
         <Card className="max-w-md mx-auto border-primary">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -616,13 +643,19 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
                     </Badge>
                   </div>
                 ))}
-                <Button 
-                  onClick={advanceToNextRound} 
-                  className="w-full"
-                  disabled={currentRoundCandidates.length <= 2}
-                >
-                  Continue to Round {round + 1}
-                </Button>
+                {isHost ? (
+                  <Button 
+                    onClick={advanceToNextRound} 
+                    className="w-full"
+                    disabled={currentRoundCandidates.length <= 2}
+                  >
+                    Start Round {round + 1}
+                  </Button>
+                ) : (
+                  <div className="p-4 border border-primary rounded-lg bg-primary/5 text-center">
+                    <p className="text-sm font-medium">Waiting for host to start next round...</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
