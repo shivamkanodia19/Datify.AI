@@ -21,6 +21,7 @@ interface Match {
   place_id: string;
   place_data: Place;
   is_final_choice: boolean;
+  like_count?: number;
 }
 
 const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeViewProps) => {
@@ -75,11 +76,22 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       .eq('session_id', sessionId);
 
     if (!error && data) {
-      const typedMatches = data.map(match => ({
-        ...match,
-        place_data: match.place_data as unknown as Place
+      const typedMatches = await Promise.all(data.map(async (match) => {
+        // Count how many participants liked this place
+        const { count } = await supabase
+          .from('session_swipes')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', sessionId)
+          .eq('place_id', match.place_id)
+          .eq('direction', 'right');
+
+        return {
+          ...match,
+          place_data: match.place_data as unknown as Place,
+          like_count: count ?? 0
+        };
       }));
-      setMatches(typedMatches);
+      setMatches(typedMatches as any);
     }
   };
 
@@ -218,9 +230,16 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
                 key={match.id}
                 className="flex items-center justify-between p-3 border rounded-lg"
               >
-                <div>
+                <div className="flex-1">
                   <p className="font-medium">{match.place_data.name}</p>
-                  <p className="text-sm text-muted-foreground">{match.place_data.type}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground">{match.place_data.type}</p>
+                    {match.like_count && (
+                      <Badge variant="secondary" className="text-xs">
+                        {match.like_count} {match.like_count === 1 ? 'like' : 'likes'}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 {!match.is_final_choice && (
                   <Button

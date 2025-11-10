@@ -192,6 +192,7 @@ export type Database = {
           radius: number
           session_code: string
           start_address: string
+          started_at: string | null
           status: string
           updated_at: string
         }
@@ -204,6 +205,7 @@ export type Database = {
           radius?: number
           session_code: string
           start_address: string
+          started_at?: string | null
           status?: string
           updated_at?: string
         }
@@ -216,6 +218,7 @@ export type Database = {
           radius?: number
           session_code?: string
           start_address?: string
+          started_at?: string | null
           status?: string
           updated_at?: string
         }
@@ -226,6 +229,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      join_session_with_code: {
+        Args: { code: string }
+        Returns: {
+          activities: string | null
+          created_at: string
+          created_by: string
+          food_preferences: string | null
+          id: string
+          radius: number
+          session_code: string
+          start_address: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "sessions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       user_has_session_access: {
         Args: { _session_id: string; _user_id: string }
         Returns: boolean

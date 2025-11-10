@@ -24,6 +24,7 @@ const Index = () => {
   const [sessionCode, setSessionCode] = useState<string | null>(null);
   const [joinCode, setJoinCode] = useState("");
   const [participantsCount, setParticipantsCount] = useState<number>(1);
+  const [isHost, setIsHost] = useState<boolean>(false);
   const [view, setView] = useState<'mode-select' | 'solo' | 'session-setup' | 'waiting' | 'swipe'>('mode-select');
   useEffect(() => {
     // Check auth status
@@ -54,27 +55,37 @@ const Index = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
-  const watchParticipants = async (sid: string) => {
+  const watchParticipants = async (sid: string, hostUserId: string) => {
     try {
-      // Initial count
+      // Check if current user is host
+      setIsHost(user?.id === hostUserId);
+
+      // Initial count and session state
       const { count } = await supabase
         .from('session_participants')
         .select('*', { count: 'exact', head: true })
         .eq('session_id', sid);
 
+      const { data: session } = await supabase
+        .from('sessions')
+        .select('started_at')
+        .eq('id', sid)
+        .single();
+
       const initialCount = count ?? 1;
       setParticipantsCount(initialCount);
 
-      if (initialCount >= 2) {
+      // If already started, go to swipe
+      if (session?.started_at) {
         setView('swipe');
         return;
       }
 
       setView('waiting');
 
-      // Subscribe to changes until we have 2 participants
+      // Subscribe to both participant changes and session start
       const channel = supabase
-        .channel(`participants_${sid}`)
+        .channel(`session_${sid}`)
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sid}` },
@@ -83,9 +94,14 @@ const Index = () => {
               .from('session_participants')
               .select('*', { count: 'exact', head: true })
               .eq('session_id', sid);
-            const c = newCount ?? 1;
-            setParticipantsCount(c);
-            if (c >= 2) {
+            setParticipantsCount(newCount ?? 1);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `id=eq.${sid}` },
+          async (payload) => {
+            if (payload.new.started_at) {
               setView('swipe');
               supabase.removeChannel(channel);
             }
@@ -94,8 +110,23 @@ const Index = () => {
         .subscribe();
     } catch (e) {
       console.error('Error watching participants:', e);
-      // Fallback to swipe so user is not stuck
       setView('swipe');
+    }
+  };
+
+  const handleStartRound = async () => {
+    if (!sessionId) return;
+    
+    try {
+      await supabase
+        .from('sessions')
+        .update({ started_at: new Date().toISOString() })
+        .eq('id', sessionId);
+      
+      toast.success("Round started!");
+    } catch (error) {
+      console.error('Error starting round:', error);
+      toast.error("Failed to start round");
     }
   };
   const handleCreateSession = async (preferences: {
@@ -151,7 +182,7 @@ const Index = () => {
       setSessionId(session.id);
       setSessionCode(code);
       toast.success(`Session created! Code: ${code}`);
-      await watchParticipants(session.id);
+      await watchParticipants(session.id, user.id);
     } catch (error) {
       console.error('Error creating session:', error);
       toast.error("Failed to create session");
@@ -203,7 +234,7 @@ const Index = () => {
       setSessionId(session.id);
       setSessionCode(session.session_code);
       toast.success("Joined session successfully!");
-      await watchParticipants(session.id);
+      await watchParticipants(session.id, session.created_by);
     } catch (error) {
       console.error('Error joining session:', error);
       toast.error("Failed to join session");
@@ -303,10 +334,10 @@ const Index = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="w-6 h-6" />
-                Waiting for a friend
+                Waiting Room
               </CardTitle>
               <CardDescription>
-                Share this code and we’ll start once two participants have joined.
+                Share this code with others. {isHost ? 'Start the round when ready!' : 'Waiting for host to start...'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -317,10 +348,17 @@ const Index = () => {
                 </div>
               </div>
               <p className="text-center text-muted-foreground">
-                {participantsCount} of 2 participants joined
+                {participantsCount} participant{participantsCount !== 1 ? 's' : ''} joined
               </p>
-              <div className="flex justify-center">
-                <Button variant="outline" onClick={() => setView('mode-select')}>Cancel</Button>
+              <div className="flex gap-2 justify-center">
+                {isHost && participantsCount >= 2 && (
+                  <Button onClick={handleStartRound} className="flex-1">
+                    Start Round
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setView('mode-select')}>
+                  Cancel
+                </Button>
               </div>
             </CardContent>
           </Card>
