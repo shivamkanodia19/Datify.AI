@@ -52,13 +52,8 @@ const SessionManager = ({ onSessionCreated, onSessionJoined }: SessionManagerPro
 
       if (error) throw error;
 
-      // Add creator as participant
-      await supabase
-        .from('session_participants')
-        .insert({
-          session_id: session.id,
-          user_id: user.id,
-        });
+// Host is auto-added as participant by backend trigger
+
 
       onSessionCreated(session.id, code);
       toast.success(`Session created! Code: ${code}`);

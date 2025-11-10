@@ -155,18 +155,8 @@ const Index = () => {
 
       if (error) throw error;
 
-      // Add host as participant
-      const { error: participantError } = await supabase
-        .from('session_participants')
-        .insert({
-          session_id: session.id,
-          user_id: user.id,
-        });
+// Host is auto-added as participant by DB trigger (trg_add_host_as_participant)
 
-      if (participantError) {
-        console.error('Error adding host as participant:', participantError);
-        throw participantError;
-      }
 
       // Generate recommendations
       const response = await fetch(
