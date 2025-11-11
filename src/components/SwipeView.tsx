@@ -360,6 +360,101 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     }
   };
 
+  const forceAdvanceRound = async () => {
+    if (!isHost) return;
+    
+    setIsLoading(true);
+    try {
+      // Get current swipes for this round
+      const deckPlaceIds = deck.map((p) => p.id);
+      
+      const { data: swipes } = await supabase
+        .from("session_swipes")
+        .select("place_id, user_id, place_data")
+        .eq("session_id", sessionId)
+        .eq("round", round)
+        .eq("direction", "right")
+        .in("place_id", deckPlaceIds);
+      
+      if (!swipes || swipes.length === 0) {
+        toast.error("No likes yet to advance!");
+        return;
+      }
+      
+      // Count likes per place
+      const likeCounts: Record<string, Set<string>> = {};
+      swipes.forEach((swipe) => {
+        if (!likeCounts[swipe.place_id]) {
+          likeCounts[swipe.place_id] = new Set();
+        }
+        likeCounts[swipe.place_id].add(swipe.user_id);
+      });
+      
+      // Find unanimous (all participants)
+      const unanimous = Object.entries(likeCounts)
+        .filter(([_, users]) => users.size === participantCount)
+        .map(([placeId]) => placeId);
+      
+      // Find advancing (some but not all)
+      const advancing = Object.entries(likeCounts)
+        .filter(([_, users]) => users.size > 0 && users.size < participantCount)
+        .sort((a, b) => b[1].size - a[1].size)
+        .map(([placeId]) => placeId);
+      
+      // Build matches for unanimous
+      const newMatches = unanimous
+        .map((placeId) => {
+          const place = deck.find((p) => p.id === placeId);
+          if (!place) return null;
+          return {
+            id: `match-${placeId}`,
+            place_id: placeId,
+            place_data: place,
+            is_final_choice: false,
+            like_count: participantCount,
+          };
+        })
+        .filter(Boolean) as Match[];
+      
+      // Build advancing candidates
+      const advancingPlaces = advancing
+        .map((placeId) => deck.find((p) => p.id === placeId))
+        .filter(Boolean) as Place[];
+      
+      setRoundMatches(newMatches);
+      setCurrentRoundCandidates(advancingPlaces);
+      setShowRoundSummary(true);
+      
+      // Update swipe counts for display
+      const newSwipeCounts: Record<string, number> = {};
+      Object.entries(likeCounts).forEach(([placeId, users]) => {
+        newSwipeCounts[placeId] = users.size;
+      });
+      setSwipeCounts(newSwipeCounts);
+      
+      // Determine next action
+      if (advancingPlaces.length === 0 && newMatches.length === 0) {
+        setNextAction("end");
+        setGameEnded(true);
+        toast.success("Round forced to end!");
+      } else if (advancingPlaces.length <= 2 && advancingPlaces.length > 0) {
+        setNextAction("vote");
+        toast.success(`Forcing to final vote with ${advancingPlaces.length} options!`);
+      } else if (advancingPlaces.length > 2) {
+        setNextAction("nextRound");
+        toast.success(`Forced round end! ${advancingPlaces.length} places advancing.`);
+      } else {
+        setNextAction("end");
+        toast.success("Round ended!");
+      }
+    } catch (error) {
+      console.error("Error forcing round advance:", error);
+      toast.error("Failed to advance round");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const advanceToNextRound = async () => {
     // Merge current round matches into all matches
     const newAllMatches = [...allMatches, ...roundMatches];
@@ -628,10 +723,15 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
             </CardTitle>
             <CardDescription>Round {round} will complete when everyone finishes swiping</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {participantCount} participant{participantCount !== 1 ? "s" : ""} total
             </p>
+            {isHost && (
+              <Button onClick={forceAdvanceRound} disabled={isLoading} className="w-full" variant="outline">
+                Force End Round (Host Only)
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
