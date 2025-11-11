@@ -15,7 +15,7 @@ import { User } from "@supabase/supabase-js";
 import { LogOut, Mail, Users, Plus, LogIn } from "lucide-react";
 import { toast } from "sonner";
 
-const Index = () => {
+const AppPage = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -447,4 +447,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default AppPage;
