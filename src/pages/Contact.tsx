@@ -68,7 +68,7 @@ const Contact = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[hsl(200,90%,95%)] via-[hsl(320,80%,95%)] to-[hsl(340,80%,95%)] p-4">
       <div className="max-w-2xl mx-auto py-8">
         <Button
           variant="ghost"
@@ -79,7 +79,7 @@ const Contact = () => {
           Back to Home
         </Button>
 
-        <Card>
+        <Card className="shadow-xl">
           <CardHeader>
             <CardTitle>Contact Us</CardTitle>
             <CardDescription>

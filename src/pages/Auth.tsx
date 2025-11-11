@@ -161,8 +161,8 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary/20 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[hsl(200,90%,95%)] via-[hsl(320,80%,95%)] to-[hsl(340,80%,95%)] p-4">
+      <Card className="w-full max-w-md shadow-xl">
         <CardHeader>
           <CardTitle>Welcome</CardTitle>
           <CardDescription>Login or create an account to save your favorite places</CardDescription>
