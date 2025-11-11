@@ -318,9 +318,8 @@ const AppPage = () => {
                         setSessionType('date');
                         setView('session-setup');
                       }}
-                      className="h-auto py-6 flex-col"
+                      className="h-auto py-6 flex-col bg-[hsl(320,80%,95%)] hover:bg-[hsl(320,80%,90%)] border-[hsl(320,60%,85%)]"
                     >
-                      <span className="text-2xl mb-2">💑</span>
                       <span className="font-semibold">Date</span>
                       <span className="text-xs text-muted-foreground mt-1">2 people</span>
                     </Button>
@@ -330,9 +329,8 @@ const AppPage = () => {
                         setSessionType('group');
                         setView('session-setup');
                       }}
-                      className="h-auto py-6 flex-col"
+                      className="h-auto py-6 flex-col bg-[hsl(320,80%,95%)] hover:bg-[hsl(320,80%,90%)] border-[hsl(320,60%,85%)]"
                     >
-                      <span className="text-2xl mb-2">👥</span>
                       <span className="font-semibold">Group</span>
                       <span className="text-xs text-muted-foreground mt-1">Up to 10</span>
                     </Button>
