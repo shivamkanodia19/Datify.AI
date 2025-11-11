@@ -764,7 +764,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   const progressPercent = deck.length > 0 ? (currentIndex / deck.length) * 100 : 0;
 
   return (
-    <div className="min-h-screen bg-background p-4 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-[hsl(200,90%,95%)] via-[hsl(320,80%,95%)] to-[hsl(340,80%,95%)] p-4 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between max-w-md mx-auto">
         <Button variant="ghost" onClick={onBack}>

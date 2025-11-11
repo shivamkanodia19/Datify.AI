@@ -63,7 +63,7 @@ const RecommendationsPanel = ({ places, selectedPlace, onSelectPlace }: Recommen
   };
 
   return (
-    <div className="flex-1 bg-background p-6 overflow-y-auto">
+    <div className="flex-1 bg-card/50 backdrop-blur-sm p-6 overflow-y-auto">
       <div className="max-w-3xl mx-auto space-y-4">
         <Tabs defaultValue="recommendations" className="w-full">
           <TabsList className="grid w-full grid-cols-2">

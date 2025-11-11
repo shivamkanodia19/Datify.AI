@@ -62,17 +62,22 @@ const AppPage = () => {
       // Check if current user is host
       setIsHost(user?.id === hostUserId);
 
-      // Initial count and session state
+      // Get session details including type
+      const { data: session } = await supabase
+        .from('sessions')
+        .select('started_at, session_type')
+        .eq('id', sid)
+        .single();
+
+      if (session?.session_type) {
+        setSessionType(session.session_type as 'date' | 'group');
+      }
+
+      // Initial count
       const { count } = await supabase
         .from('session_participants')
         .select('*', { count: 'exact', head: true })
         .eq('session_id', sid);
-
-      const { data: session } = await supabase
-        .from('sessions')
-        .select('started_at')
-        .eq('id', sid)
-        .single();
 
       const initialCount = count ?? 1;
       setParticipantsCount(initialCount);

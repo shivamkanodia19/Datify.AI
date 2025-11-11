@@ -79,7 +79,7 @@ const PreferencesPanel = ({ onRecommendationsGenerated, onCreateSession, session
   };
 
   return (
-    <div className="w-80 bg-card border-r border-border p-6 overflow-y-auto">
+    <div className="w-80 bg-card/80 backdrop-blur-sm border-r border-border p-6 overflow-y-auto">
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground mb-1">Local Guide</h2>

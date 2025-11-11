@@ -10,7 +10,7 @@ interface DetailsPanelProps {
 const DetailsPanel = ({ place }: DetailsPanelProps) => {
   if (!place) {
     return (
-      <div className="w-96 bg-card border-l border-border p-6 overflow-y-auto">
+      <div className="w-96 bg-card/80 backdrop-blur-sm border-l border-border p-6 overflow-y-auto">
         <div className="flex items-center justify-center h-full text-muted-foreground">
           <p className="text-center">Select a place to view details</p>
         </div>
@@ -19,7 +19,7 @@ const DetailsPanel = ({ place }: DetailsPanelProps) => {
   }
 
   return (
-    <div className="w-96 bg-card border-l border-border p-6 overflow-y-auto">
+    <div className="w-96 bg-card/80 backdrop-blur-sm border-l border-border p-6 overflow-y-auto">
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground mb-2">Place Details</h2>
