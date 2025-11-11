@@ -93,9 +93,11 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     if (!error && data) {
       setAllMatches(
         data.map((m) => ({
-          ...m,
-          place_data: m.place_data as Place,
-          like_count: m.like_count || 0,
+          id: m.id,
+          place_id: m.place_id,
+          place_data: m.place_data as unknown as Place,
+          is_final_choice: m.is_final_choice,
+          like_count: 0,
         })),
       );
     }
