@@ -31,12 +31,14 @@ User preferences:
 - Activities interested in: ${activities || 'any activities'}
 - Food preferences: ${foodPreferences || 'any cuisine'}
 
+CRITICAL: Each location must be UNIQUE. Do not repeat the same restaurant/place location. For chain restaurants (e.g., KFC, McDonald's), you can include different locations, but each specific address must appear only once in your results.
+
 For each place, provide:
 1. Exact name of the establishment
 2. Type (Restaurant, Outdoor Activity, Cultural Activity, etc.)
 3. Real rating (if available, otherwise estimate based on reviews)
 4. Detailed description (2-3 sentences about what makes it special)
-5. Full address
+5. Full address (must be unique for each place)
 6. 3 key highlights
 
 Make sure these are REAL places that exist within ${radius} miles of ${startAddress}. Search the internet to verify they exist and get accurate information.
@@ -119,7 +121,20 @@ Return ONLY a valid JSON array with this exact structure, no additional text:
 
     console.log('Parsed places:', places);
 
-    return new Response(JSON.stringify({ places }), {
+    // Deduplicate by name + address combination to ensure unique locations
+    const seenLocations = new Set<string>();
+    const uniquePlaces = places.filter((place: any) => {
+      const locationKey = `${place.name.toLowerCase().trim()}|${place.address.toLowerCase().trim()}`;
+      if (seenLocations.has(locationKey)) {
+        return false;
+      }
+      seenLocations.add(locationKey);
+      return true;
+    });
+
+    console.log(`Filtered ${places.length} places to ${uniquePlaces.length} unique locations`);
+
+    return new Response(JSON.stringify({ places: uniquePlaces }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
