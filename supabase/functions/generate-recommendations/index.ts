@@ -96,6 +96,18 @@ Return ONLY a valid JSON array with this exact structure, no additional text:
     console.log('AI Response:', data);
     
     const content = data.choices[0].message.content;
+    console.log('Raw AI content:', content);
+    
+    // Helper function to clean common JSON issues
+    const cleanJSON = (jsonStr: string): string => {
+      return jsonStr
+        // Remove trailing commas before closing braces/brackets
+        .replace(/,(\s*[}\]])/g, '$1')
+        // Fix common escaping issues
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+    };
     
     // Extract JSON from the response
     let places;
@@ -103,18 +115,33 @@ Return ONLY a valid JSON array with this exact structure, no additional text:
       // Try to parse the content directly
       places = JSON.parse(content);
     } catch (e) {
+      console.log('Direct parse failed, trying alternatives...');
       // If that fails, try to extract JSON from markdown code blocks
       const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
       if (jsonMatch) {
-        places = JSON.parse(jsonMatch[1]);
+        try {
+          const cleaned = cleanJSON(jsonMatch[1]);
+          places = JSON.parse(cleaned);
+        } catch (cleanError) {
+          console.error('Cleaned JSON parse failed:', cleanError);
+          console.error('Attempted to parse:', jsonMatch[1]);
+          throw new Error('Failed to parse AI response after cleaning');
+        }
       } else {
         // Try to find JSON array in the text
         const arrayMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
         if (arrayMatch) {
-          places = JSON.parse(arrayMatch[0]);
+          try {
+            const cleaned = cleanJSON(arrayMatch[0]);
+            places = JSON.parse(cleaned);
+          } catch (cleanError) {
+            console.error('Array JSON parse failed:', cleanError);
+            console.error('Attempted to parse:', arrayMatch[0]);
+            throw new Error('Failed to parse AI response array');
+          }
         } else {
           console.error('Could not extract JSON from response:', content);
-          throw new Error('Failed to parse AI response');
+          throw new Error('Failed to parse AI response - no valid JSON found');
         }
       }
     }
