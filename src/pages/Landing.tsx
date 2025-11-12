@@ -31,7 +31,7 @@ const Landing = () => {
           <div className="mb-8 inline-block animate-fade-in">
             <div className="flex items-center justify-center gap-3 mb-4">
               <Heart className="w-16 h-16 text-primary fill-primary animate-pulse" />
-              <h1 className="text-8xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+              <h1 className="text-8xl font-playfair font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
                 Dateify
               </h1>
             </div>

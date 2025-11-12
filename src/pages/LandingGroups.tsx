@@ -31,7 +31,7 @@ const LandingGroups = () => {
           <div className="mb-8 inline-block animate-fade-in">
             <div className="flex items-center justify-center gap-3 mb-4">
               <Users className="w-16 h-16 text-[hsl(210,70%,55%)] fill-[hsl(210,70%,55%)] animate-pulse" />
-              <h1 className="text-8xl font-bold bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
+              <h1 className="text-8xl font-playfair font-bold bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent tracking-tight">
                 Dateify Groups
               </h1>
             </div>
