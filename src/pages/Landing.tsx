@@ -14,6 +14,11 @@ const Landing = () => {
           <div className="absolute bottom-20 right-20 w-96 h-96 bg-secondary/20 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
 
+        {/* Contact Button */}
+        <Button onClick={() => navigate("/contact")} variant="outline" className="absolute top-6 left-6 z-20 border-2 border-primary/30 hover:border-primary/50" size="lg">
+          Contact
+        </Button>
+
         {/* Toggle Button */}
         <Button onClick={() => navigate("/groups")} className="absolute top-6 right-6 z-20 bg-gradient-to-r from-primary to-secondary hover:opacity-90" size="lg">
           Switch to Groups
@@ -24,7 +29,7 @@ const Landing = () => {
           <div className="mb-8 inline-block animate-fade-in">
             <div className="flex items-center justify-center gap-4 mb-6 px-4">
               <Heart className="w-14 h-14 md:w-16 md:h-16 text-primary fill-primary animate-pulse flex-shrink-0" />
-              <h1 className="text-6xl md:text-7xl lg:text-8xl font-playfair font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent my-20 py-[10px]">
+              <h1 className="text-7xl md:text-8xl lg:text-9xl font-playfair font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent my-20 py-[10px]">
                 Dateify
               </h1>
             </div>
