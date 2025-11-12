@@ -16,6 +16,16 @@ const Landing = () => {
           <div className="absolute top-20 left-20 w-72 h-72 bg-primary/20 rounded-full blur-3xl animate-pulse" />
           <div className="absolute bottom-20 right-20 w-96 h-96 bg-secondary/20 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
+
+        {/* Toggle Button */}
+        <Button
+          onClick={() => navigate("/groups")}
+          className="absolute top-6 right-6 z-20 bg-gradient-to-r from-primary to-secondary hover:opacity-90"
+          size="lg"
+        >
+          Switch to Groups
+          <ArrowRight className="ml-2 h-5 w-5" />
+        </Button>
         
         <div className="relative z-10 max-w-6xl mx-auto px-4 py-20 text-center">
           <div className="mb-8 inline-block animate-fade-in">
