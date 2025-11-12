@@ -47,10 +47,10 @@ const LandingGroups = () => {
             </div>
           </div>
           
-          <p className="text-3xl text-foreground/90 mb-4 max-w-3xl mx-auto font-semibold animate-fade-in">
+          <p className="text-3xl text-foreground/90 mb-4 max-w-3xl mx-auto font-montserrat font-semibold animate-fade-in">
             Find the perfect hangout spot together.
           </p>
-          <p className="text-xl text-foreground/70 mb-12 max-w-2xl mx-auto animate-fade-in">
+          <p className="text-xl text-foreground/70 mb-12 max-w-2xl mx-auto font-inter animate-fade-in">
             Swipe with your squad to discover places everyone will love. No more group chat chaos!
           </p>
           
@@ -107,10 +107,10 @@ const LandingGroups = () => {
       {/* Features Section */}
       <section id="features" className="py-24 bg-background">
         <div className="max-w-6xl mx-auto px-4">
-          <h2 className="text-6xl font-bold text-center mb-6 bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
+          <h2 className="text-6xl font-montserrat font-bold text-center mb-6 bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
             How It Works
           </h2>
-          <p className="text-center text-foreground/70 mb-20 text-xl max-w-2xl mx-auto">
+          <p className="text-center text-foreground/70 mb-20 text-xl max-w-2xl mx-auto font-inter">
             Finding the perfect group hangout has never been easier. Just three simple steps to squad success.
           </p>
 
@@ -122,8 +122,8 @@ const LandingGroups = () => {
               <div className="inline-block px-4 py-1 bg-[hsl(210,70%,60%)]/20 rounded-full text-sm font-semibold text-[hsl(210,70%,50%)] mb-4">
                 Step 1
               </div>
-              <h3 className="text-2xl font-bold mb-4">Create Your Squad</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-4">Create Your Squad</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Start a group session with a simple code. Invite up to 10 friends to join the fun!
               </p>
             </div>
@@ -135,8 +135,8 @@ const LandingGroups = () => {
               <div className="inline-block px-4 py-1 bg-[hsl(190,60%,55%)]/20 rounded-full text-sm font-semibold text-[hsl(190,60%,45%)] mb-4">
                 Step 2
               </div>
-              <h3 className="text-2xl font-bold mb-4">Swipe Together</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-4">Swipe Together</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Everyone swipes on group-friendly venues based on your collective preferences and location.
               </p>
             </div>
@@ -148,8 +148,8 @@ const LandingGroups = () => {
               <div className="inline-block px-4 py-1 bg-[hsl(210,70%,60%)]/20 rounded-full text-sm font-semibold text-[hsl(210,70%,50%)] mb-4">
                 Step 3
               </div>
-              <h3 className="text-2xl font-bold mb-4">Find Matches</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-4">Find Matches</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Instantly see places everyone liked and make group plans. No more endless group debates!
               </p>
             </div>
@@ -161,10 +161,10 @@ const LandingGroups = () => {
       <section className="py-24 bg-gradient-to-br from-[hsl(210,90%,95%)] via-[hsl(200,85%,92%)] to-[hsl(190,80%,90%)]">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
+            <h2 className="text-5xl font-montserrat font-bold mb-6 bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
               Why Groups Love Dateify
             </h2>
-            <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
+            <p className="text-xl text-foreground/70 max-w-2xl mx-auto font-inter">
               Make group planning fun instead of frustrating
             </p>
           </div>
@@ -172,32 +172,32 @@ const LandingGroups = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <CheckCircle className="w-12 h-12 text-[hsl(210,70%,55%)] mb-4" />
-              <h3 className="text-2xl font-bold mb-3">End Group Chat Chaos</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">End Group Chat Chaos</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 No more endless back-and-forth messages. Let your swipes make the decision!
               </p>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <Star className="w-12 h-12 text-[hsl(190,60%,50%)] mb-4" />
-              <h3 className="text-2xl font-bold mb-3">Discover Group Spots</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">Discover Group Spots</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Find venues perfect for groups - restaurants, activities, and entertainment.
               </p>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <Users className="w-12 h-12 text-[hsl(210,70%,55%)] fill-[hsl(210,70%,55%)] mb-4" />
-              <h3 className="text-2xl font-bold mb-3">Build Squad Memories</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">Build Squad Memories</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Every match is a new adventure waiting to happen with your crew.
               </p>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <Sparkles className="w-12 h-12 text-[hsl(190,60%,50%)] mb-4" />
-              <h3 className="text-2xl font-bold mb-3">Smart Group Matching</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">Smart Group Matching</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Our algorithm finds places that work for everyone in your group.
               </p>
             </div>
@@ -208,10 +208,10 @@ const LandingGroups = () => {
       {/* CTA Section */}
       <section className="py-24 bg-background">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="text-6xl font-bold mb-8 bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
+          <h2 className="text-6xl font-montserrat font-bold mb-8 bg-gradient-to-r from-[hsl(210,70%,55%)] to-[hsl(190,60%,50%)] bg-clip-text text-transparent">
             Ready to Find Your Perfect Hangout?
           </h2>
-          <p className="text-2xl text-foreground/70 mb-12 max-w-2xl mx-auto">
+          <p className="text-2xl text-foreground/70 mb-12 max-w-2xl mx-auto font-inter">
             Join groups making better hangout decisions together
           </p>
           <Button 

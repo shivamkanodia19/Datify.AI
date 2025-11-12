@@ -35,10 +35,10 @@ const Landing = () => {
             </div>
           </div>
           
-          <p className="text-3xl text-foreground/90 mb-4 max-w-3xl mx-auto font-semibold animate-fade-in">
+          <p className="text-3xl text-foreground/90 mb-4 max-w-3xl mx-auto font-montserrat font-semibold animate-fade-in">
             Find the perfect date spot together.
           </p>
-          <p className="text-xl text-foreground/70 mb-12 max-w-2xl mx-auto animate-fade-in">
+          <p className="text-xl text-foreground/70 mb-12 max-w-2xl mx-auto font-inter animate-fade-in">
             Swipe, match, and discover places you'll both love. No more endless debates about where to go!
           </p>
           
@@ -84,10 +84,10 @@ const Landing = () => {
       {/* Features Section */}
       <section id="features" className="py-24 bg-background">
         <div className="max-w-6xl mx-auto px-4">
-          <h2 className="text-6xl font-bold text-center mb-6 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <h2 className="text-6xl font-montserrat font-bold text-center mb-6 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             How It Works
           </h2>
-          <p className="text-center text-foreground/70 mb-20 text-xl max-w-2xl mx-auto">
+          <p className="text-center text-foreground/70 mb-20 text-xl max-w-2xl mx-auto font-inter">
             Finding the perfect date spot has never been easier. Just three simple steps to date night success.
           </p>
 
@@ -99,8 +99,8 @@ const Landing = () => {
               <div className="inline-block px-4 py-1 bg-primary/20 rounded-full text-sm font-semibold text-primary mb-4">
                 Step 1
               </div>
-              <h3 className="text-2xl font-bold mb-4">Create or Join</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-4">Create or Join</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Start a session or join your partner's session with a simple code. It takes just seconds!
               </p>
             </div>
@@ -112,8 +112,8 @@ const Landing = () => {
               <div className="inline-block px-4 py-1 bg-secondary/20 rounded-full text-sm font-semibold text-secondary mb-4">
                 Step 2
               </div>
-              <h3 className="text-2xl font-bold mb-4">Swipe Together</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-4">Swipe Together</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Both of you swipe on personalized recommendations based on your preferences and location.
               </p>
             </div>
@@ -125,8 +125,8 @@ const Landing = () => {
               <div className="inline-block px-4 py-1 bg-primary/20 rounded-full text-sm font-semibold text-primary mb-4">
                 Step 3
               </div>
-              <h3 className="text-2xl font-bold mb-4">Find Matches</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-4">Find Matches</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Instantly discover places you both liked and make your plans. No more arguments!
               </p>
             </div>
@@ -138,10 +138,10 @@ const Landing = () => {
       <section className="py-24 bg-gradient-to-br from-[hsl(200,90%,95%)] via-[hsl(320,80%,95%)] to-[hsl(340,80%,95%)]">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            <h2 className="text-5xl font-montserrat font-bold mb-6 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
               Why Couples Love Dateify
             </h2>
-            <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
+            <p className="text-xl text-foreground/70 max-w-2xl mx-auto font-inter">
               Make date planning fun instead of frustrating
             </p>
           </div>
@@ -149,32 +149,32 @@ const Landing = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <CheckCircle className="w-12 h-12 text-primary mb-4" />
-              <h3 className="text-2xl font-bold mb-3">No More Indecision</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">No More Indecision</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Stop the "I don't know, what do you want?" cycle. Let your swipes do the talking!
               </p>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <Star className="w-12 h-12 text-secondary mb-4" />
-              <h3 className="text-2xl font-bold mb-3">Discover New Places</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">Discover New Places</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Find hidden gems and popular spots you've both been wanting to try.
               </p>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <Heart className="w-12 h-12 text-primary fill-primary mb-4" />
-              <h3 className="text-2xl font-bold mb-3">Build Memories</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">Build Memories</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Every match is a new adventure waiting to happen together.
               </p>
             </div>
 
             <div className="bg-white/60 backdrop-blur-md rounded-2xl p-8 shadow-xl">
               <Sparkles className="w-12 h-12 text-secondary mb-4" />
-              <h3 className="text-2xl font-bold mb-3">Smart Recommendations</h3>
-              <p className="text-foreground/70 text-lg">
+              <h3 className="text-2xl font-montserrat font-bold mb-3">Smart Recommendations</h3>
+              <p className="text-foreground/70 text-lg font-inter">
                 Our algorithm learns your preferences to suggest places you'll both love.
               </p>
             </div>
@@ -185,10 +185,10 @@ const Landing = () => {
       {/* CTA Section */}
       <section className="py-24 bg-background">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="text-6xl font-bold mb-8 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          <h2 className="text-6xl font-montserrat font-bold mb-8 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
             Ready to Find Your Perfect Date Spot?
           </h2>
-          <p className="text-2xl text-foreground/70 mb-12 max-w-2xl mx-auto">
+          <p className="text-2xl text-foreground/70 mb-12 max-w-2xl mx-auto font-inter">
             Join thousands of couples making better date decisions together
           </p>
           <Button size="lg" className="text-xl px-14 py-8 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-xl" onClick={() => navigate("/auth?mode=signup")}>
