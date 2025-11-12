@@ -1,12 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Heart, Users, MapPin, Sparkles, CheckCircle, Star, ArrowRight } from "lucide-react";
-
 const Landing = () => {
   const navigate = useNavigate();
-
-  return (
-    <div className="min-h-screen">
+  return <div className="min-h-screen">
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[hsl(200,90%,95%)] via-[hsl(320,80%,95%)] to-[hsl(340,80%,95%)]" />
@@ -18,11 +15,7 @@ const Landing = () => {
         </div>
 
         {/* Toggle Button */}
-        <Button
-          onClick={() => navigate("/groups")}
-          className="absolute top-6 right-6 z-20 bg-gradient-to-r from-primary to-secondary hover:opacity-90"
-          size="lg"
-        >
+        <Button onClick={() => navigate("/groups")} className="absolute top-6 right-6 z-20 bg-gradient-to-r from-primary to-secondary hover:opacity-90" size="lg">
           Switch to Groups
           <ArrowRight className="ml-2 h-5 w-5" />
         </Button>
@@ -31,7 +24,7 @@ const Landing = () => {
           <div className="mb-8 inline-block animate-fade-in">
             <div className="flex items-center justify-center gap-3 mb-4">
               <Heart className="w-16 h-16 text-primary fill-primary animate-pulse" />
-              <h1 className="text-8xl font-playfair font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent tracking-tight">
+              <h1 className="text-8xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mx-0 my-px py-[15px]">
                 Dateify
               </h1>
             </div>
@@ -45,27 +38,16 @@ const Landing = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-20 animate-fade-in">
-            <Button 
-              size="lg" 
-              className="text-lg px-10 py-7 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-lg"
-              onClick={() => navigate("/auth?mode=signup")}
-            >
+            <Button size="lg" className="text-lg px-10 py-7 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-lg" onClick={() => navigate("/auth?mode=signup")}>
               Get Started Free
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
-              className="text-lg px-10 py-7 border-2 border-primary/30 hover:border-primary/50 transition-all hover:scale-105"
-              onClick={() => navigate("/auth")}
-            >
+            <Button size="lg" variant="outline" className="text-lg px-10 py-7 border-2 border-primary/30 hover:border-primary/50 transition-all hover:scale-105" onClick={() => navigate("/auth")}>
               Login
             </Button>
-            <Button 
-              size="lg" 
-              className="text-lg px-10 py-7 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-lg"
-              onClick={() => document.getElementById("features")?.scrollIntoView({ behavior: "smooth" })}
-            >
+            <Button size="lg" className="text-lg px-10 py-7 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-lg" onClick={() => document.getElementById("features")?.scrollIntoView({
+            behavior: "smooth"
+          })}>
               Learn More
             </Button>
           </div>
@@ -204,11 +186,7 @@ const Landing = () => {
           <p className="text-2xl text-foreground/70 mb-12 max-w-2xl mx-auto">
             Join thousands of couples making better date decisions together
           </p>
-          <Button 
-            size="lg" 
-            className="text-xl px-14 py-8 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-xl"
-            onClick={() => navigate("/auth?mode=signup")}
-          >
+          <Button size="lg" className="text-xl px-14 py-8 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all hover:scale-105 shadow-xl" onClick={() => navigate("/auth?mode=signup")}>
             Start Swiping Now
             <ArrowRight className="ml-2 h-6 w-6" />
           </Button>
@@ -229,10 +207,7 @@ const Landing = () => {
               </span>
             </div>
             <div className="flex gap-6">
-              <button 
-                onClick={() => navigate("/contact")}
-                className="text-foreground/70 hover:text-foreground transition-colors"
-              >
+              <button onClick={() => navigate("/contact")} className="text-foreground/70 hover:text-foreground transition-colors">
                 Contact
               </button>
               <button className="text-foreground/70 hover:text-foreground transition-colors">
@@ -248,8 +223,6 @@ const Landing = () => {
           </div>
         </div>
       </footer>
-    </div>
-  );
+    </div>;
 };
-
 export default Landing;
