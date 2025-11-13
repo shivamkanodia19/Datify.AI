@@ -110,53 +110,14 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
           if (newSession.current_round && newSession.current_round > round) {
             console.log(`Round advanced from ${round} to ${newSession.current_round}`);
             
-            // If we're already showing summary, host clicked advance - sync to new round
-            if (showRoundSummary) {
-              console.log("Host clicked advance, syncing to new round");
-              
-              // Merge current round matches into all matches
-              const newAllMatches = [...allMatches, ...roundMatches];
-              setAllMatches(newAllMatches);
-              
-              // Check what action to take based on current state
-              if (nextAction === "nextRound" && currentRoundCandidates.length > 0) {
-                // Advance to next round with candidates
-                setDeck(currentRoundCandidates);
-                setCurrentIndex(0);
-                setRound(newSession.current_round);
-                setShowRoundSummary(false);
-                setRoundMatches([]);
-                setCurrentRoundCandidates([]);
-                setSwipeCounts({});
-                setNextAction(null);
-                toast.success(`Round ${newSession.current_round}: ${currentRoundCandidates.length} places to swipe!`);
-              } else if (nextAction === "vote") {
-                // Start voting mode
-                setIsVoteMode(true);
-                setShowRoundSummary(false);
-                setRoundMatches([]);
-                setSwipeCounts({});
-                setNextAction(null);
-                setRound(newSession.current_round);
-                toast.success(`Final vote! Choose between ${currentRoundCandidates.length} options.`);
-              } else if (nextAction === "end") {
-                // End game
-                setGameEnded(true);
-                setShowRoundSummary(false);
-                setNextAction(null);
-                toast.success("All decisions made!");
-              }
-              return;
-            }
-            
-            // Not showing summary yet - build it from current round data
+            // Get swipes from the PREVIOUS round (the one that just completed)
             const deckPlaceIds = deck.map((p) => p.id);
             
             const { data: swipes } = await supabase
               .from("session_swipes")
               .select("place_id, user_id, place_data")
               .eq("session_id", sessionId)
-              .eq("round", round)
+              .eq("round", round) // Previous round
               .eq("direction", "right")
               .in("place_id", deckPlaceIds);
             
@@ -169,12 +130,12 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
               likeCounts[swipe.place_id].add(swipe.user_id);
             });
             
-            // Find unanimous (all participants)
+            // Find unanimous matches (all participants liked)
             const unanimous = Object.entries(likeCounts)
               .filter(([_, users]) => users.size === participantCount)
               .map(([placeId]) => placeId);
             
-            // Find advancing (some but not all)
+            // Find advancing places (some but not all liked)
             const advancing = Object.entries(likeCounts)
               .filter(([_, users]) => users.size > 0 && users.size < participantCount)
               .sort((a, b) => b[1].size - a[1].size)
@@ -200,30 +161,54 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
               .map((placeId) => deck.find((p) => p.id === placeId))
               .filter(Boolean) as Place[];
             
-            setRoundMatches(newMatches);
-            setCurrentRoundCandidates(advancingPlaces);
-            setShowRoundSummary(true);
+            // Merge matches into all matches
+            const newAllMatches = [...allMatches, ...newMatches];
+            setAllMatches(newAllMatches);
             
-            // Update swipe counts for display
-            const newSwipeCounts: Record<string, number> = {};
-            Object.entries(likeCounts).forEach(([placeId, users]) => {
-              newSwipeCounts[placeId] = users.size;
-            });
-            setSwipeCounts(newSwipeCounts);
+            // Determine what should happen next
+            let shouldEndGame = false;
+            let shouldStartVote = false;
+            let shouldContinue = false;
             
-            // Determine next action
             if (advancingPlaces.length === 0 && newMatches.length === 0) {
-              setNextAction("end");
-              setGameEnded(true);
+              shouldEndGame = true;
             } else if (advancingPlaces.length <= 2 && advancingPlaces.length > 0) {
-              setNextAction("vote");
+              shouldStartVote = true;
             } else if (advancingPlaces.length > 2) {
-              setNextAction("nextRound");
+              shouldContinue = true;
             } else {
-              setNextAction("end");
+              shouldEndGame = true;
             }
             
-            toast.info("Host ended the round");
+            // Advance all participants to the new state
+            if (shouldContinue) {
+              // Continue to next round with advancing places
+              setDeck(advancingPlaces);
+              setCurrentIndex(0);
+              setRound(newSession.current_round);
+              setShowRoundSummary(false);
+              setRoundMatches([]);
+              setCurrentRoundCandidates([]);
+              setSwipeCounts({});
+              setNextAction(null);
+              toast.success(`Round ${newSession.current_round}: ${advancingPlaces.length} places to swipe!`);
+            } else if (shouldStartVote) {
+              // Start final vote
+              setCurrentRoundCandidates(advancingPlaces);
+              setIsVoteMode(true);
+              setShowRoundSummary(false);
+              setRoundMatches([]);
+              setSwipeCounts({});
+              setNextAction(null);
+              setRound(newSession.current_round);
+              toast.success(`Final vote! Choose between ${advancingPlaces.length} options.`);
+            } else if (shouldEndGame) {
+              // Game over
+              setGameEnded(true);
+              setShowRoundSummary(false);
+              setNextAction(null);
+              toast.success("All decisions made!");
+            }
           } else {
             checkRoundCompletion();
           }
