@@ -156,12 +156,7 @@ const AppGroups = () => {
       });
       if (recError) throw recError;
 
-      const data = recData as any;
-
-      if (!response.ok) throw new Error('Failed to generate recommendations');
-
-      const data = await response.json();
-      setRecommendations(data.places);
+      setRecommendations(recData.places);
       setSessionId(session.id);
       setSessionCode(code);
       toast.success(`Session created! Code: ${code}`);
