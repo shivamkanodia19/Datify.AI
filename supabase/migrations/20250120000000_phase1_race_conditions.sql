@@ -1,0 +1,316 @@
+-- ============================================================================
+-- Phase 1: Fix Race Conditions in Round Completion
+-- ============================================================================
+
+-- Add version column to sessions table for optimistic locking
+ALTER TABLE public.sessions 
+ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
+
+-- Create index on version for better performance
+CREATE INDEX IF NOT EXISTS idx_sessions_version ON public.sessions(id, version);
+
+-- Update trigger to increment version on update
+CREATE OR REPLACE FUNCTION public.increment_session_version()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  NEW.version = OLD.version + 1;
+  RETURN NEW;
+END;
+$$;
+
+-- Drop existing trigger if exists
+DROP TRIGGER IF EXISTS trg_increment_session_version ON public.sessions;
+
+-- Create trigger to auto-increment version
+CREATE TRIGGER trg_increment_session_version
+BEFORE UPDATE ON public.sessions
+FOR EACH ROW
+EXECUTE FUNCTION public.increment_session_version();
+
+-- Improved check_and_complete_round with consistent return structure and optimistic locking
+CREATE OR REPLACE FUNCTION public.check_and_complete_round(
+  p_session_id UUID,
+  p_deck_place_ids TEXT[],
+  p_round_number INTEGER,
+  p_expected_version INTEGER DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_participant_count INTEGER;
+  v_unanimous_matches TEXT[];
+  v_advancing_places JSONB;
+  v_eliminated_place_ids TEXT[];
+  v_all_completed BOOLEAN;
+  v_session_type TEXT;
+  v_current_version INTEGER;
+  v_next_action TEXT;
+BEGIN
+  -- Lock session row with optimistic locking check
+  SELECT version INTO v_current_version
+  FROM sessions 
+  WHERE id = p_session_id 
+  FOR UPDATE NOWAIT;
+  
+  -- Optimistic locking: reject if version mismatch (prevents concurrent updates)
+  IF p_expected_version IS NOT NULL AND v_current_version != p_expected_version THEN
+    RETURN jsonb_build_object(
+      'completed', false,
+      'version_mismatch', true,
+      'current_version', v_current_version,
+      'expected_version', p_expected_version,
+      'error', 'Session was modified by another participant. Please refresh.'
+    );
+  END IF;
+  
+  -- Get session type and participant count
+  SELECT s.session_type, COUNT(DISTINCT sp.user_id) 
+  INTO v_session_type, v_participant_count
+  FROM public.sessions s
+  LEFT JOIN public.session_participants sp ON sp.session_id = s.id
+  WHERE s.id = p_session_id
+  GROUP BY s.session_type;
+  
+  -- If no participants, return not completed
+  IF v_participant_count = 0 THEN
+    RETURN jsonb_build_object(
+      'completed', false,
+      'participant_count', 0,
+      'version', v_current_version
+    );
+  END IF;
+  
+  -- Check if all participants have swiped on all places in THIS ROUND's deck
+  SELECT COUNT(DISTINCT user_id) >= v_participant_count INTO v_all_completed
+  FROM (
+    SELECT DISTINCT user_id
+    FROM session_swipes
+    WHERE session_id = p_session_id
+      AND round = p_round_number
+      AND place_id = ANY(p_deck_place_ids)
+    GROUP BY user_id
+    HAVING COUNT(DISTINCT place_id) = array_length(p_deck_place_ids, 1)
+  ) AS completed_users;
+  
+  -- If not all completed, return early
+  IF NOT v_all_completed THEN
+    RETURN jsonb_build_object(
+      'completed', false,
+      'participant_count', v_participant_count,
+      'version', v_current_version
+    );
+  END IF;
+  
+  -- Find unanimous matches (all participants swiped right in THIS ROUND)
+  SELECT array_agg(place_id) INTO v_unanimous_matches
+  FROM (
+    SELECT place_id
+    FROM session_swipes
+    WHERE session_id = p_session_id
+      AND round = p_round_number
+      AND place_id = ANY(p_deck_place_ids)
+      AND direction = 'right'
+    GROUP BY place_id
+    HAVING COUNT(DISTINCT user_id) = v_participant_count
+  ) AS unanimous;
+  
+  -- Find advancing places with like counts (from THIS ROUND only, excluding unanimous)
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'place_id', place_id,
+      'like_count', like_count,
+      'place_data', place_data
+    ) ORDER BY like_count DESC
+  ) INTO v_advancing_places
+  FROM (
+    SELECT 
+      ss.place_id,
+      COUNT(DISTINCT ss.user_id) as like_count,
+      MAX(ss.place_data) as place_data
+    FROM session_swipes ss
+    WHERE ss.session_id = p_session_id
+      AND ss.round = p_round_number
+      AND ss.place_id = ANY(p_deck_place_ids)
+      AND ss.direction = 'right'
+      AND NOT (ss.place_id = ANY(COALESCE(v_unanimous_matches, ARRAY[]::TEXT[])))
+    GROUP BY ss.place_id
+    HAVING COUNT(DISTINCT ss.user_id) > 0 
+      AND COUNT(DISTINCT ss.user_id) < v_participant_count
+  ) AS advancing;
+  
+  -- Find eliminated places (no likes or all left swipes)
+  SELECT array_agg(place_id) INTO v_eliminated_place_ids
+  FROM unnest(p_deck_place_ids) AS place_id
+  WHERE place_id NOT IN (
+    SELECT unnest(COALESCE(v_unanimous_matches, ARRAY[]::TEXT[]))
+    UNION
+    SELECT jsonb_array_elements_text(jsonb_path_query_array(v_advancing_places, '$[*].place_id'))
+  );
+  
+  -- Determine next action based on results
+  IF COALESCE(array_length(v_advancing_places, 1), 0) = 0 AND COALESCE(array_length(v_unanimous_matches, 1), 0) = 0 THEN
+    v_next_action := 'end';
+  ELSIF COALESCE(array_length(v_advancing_places, 1), 0) <= 2 AND COALESCE(array_length(v_advancing_places, 1), 0) > 0 THEN
+    v_next_action := 'vote';
+  ELSIF COALESCE(array_length(v_advancing_places, 1), 0) > 2 THEN
+    v_next_action := 'nextRound';
+  ELSE
+    v_next_action := 'end';
+  END IF;
+  
+  -- Store round results
+  INSERT INTO public.round_results (
+    session_id, 
+    round_number, 
+    deck_place_ids, 
+    unanimous_matches, 
+    advancing_place_ids,
+    eliminated_place_ids
+  )
+  VALUES (
+    p_session_id,
+    p_round_number,
+    p_deck_place_ids,
+    COALESCE(v_unanimous_matches, ARRAY[]::TEXT[]),
+    COALESCE(
+      ARRAY(
+        SELECT jsonb_array_elements_text(jsonb_path_query_array(v_advancing_places, '$[*].place_id'))
+      ),
+      ARRAY[]::TEXT[]
+    ),
+    COALESCE(v_eliminated_place_ids, ARRAY[]::TEXT[])
+  )
+  ON CONFLICT (session_id, round_number) 
+  DO UPDATE SET
+    deck_place_ids = EXCLUDED.deck_place_ids,
+    unanimous_matches = EXCLUDED.unanimous_matches,
+    advancing_place_ids = EXCLUDED.advancing_place_ids,
+    eliminated_place_ids = EXCLUDED.eliminated_place_ids,
+    completed_at = now();
+  
+  -- Return consistent structure
+  RETURN jsonb_build_object(
+    'completed', true,
+    'participant_count', v_participant_count,
+    'version', v_current_version,
+    'unanimous_matches', COALESCE(v_unanimous_matches, ARRAY[]::TEXT[]),
+    'advancing_places', COALESCE(v_advancing_places, '[]'::jsonb),
+    'eliminated_place_ids', COALESCE(v_eliminated_place_ids, ARRAY[]::TEXT[]),
+    'next_action', v_next_action
+  );
+EXCEPTION
+  WHEN lock_not_available THEN
+    -- Another transaction is updating the session
+    RETURN jsonb_build_object(
+      'completed', false,
+      'locked', true,
+      'error', 'Session is being updated by another participant. Please try again.'
+    );
+END;
+$$;
+
+-- Add comment for documentation
+COMMENT ON FUNCTION public.check_and_complete_round IS 'Atomically checks if all participants completed a round. Uses optimistic locking via version column to prevent race conditions. Returns consistent JSON structure with next_action field.';
+
+-- Create function to tally final votes atomically
+CREATE OR REPLACE FUNCTION public.tally_final_votes(
+  p_session_id UUID,
+  p_candidate_place_ids TEXT[],
+  p_round_number INTEGER
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_participant_count INTEGER;
+  v_vote_counts JSONB;
+  v_max_votes INTEGER;
+  v_winners TEXT[];
+  v_winner_place_id TEXT;
+  v_winner_place_data JSONB;
+  v_tie_breaker_value NUMERIC;
+BEGIN
+  -- Lock session row
+  PERFORM 1 FROM sessions WHERE id = p_session_id FOR UPDATE;
+  
+  -- Get participant count
+  SELECT COUNT(DISTINCT user_id) INTO v_participant_count
+  FROM session_participants
+  WHERE session_id = p_session_id;
+  
+  -- Count votes for each candidate
+  SELECT jsonb_object_agg(place_id, vote_count) INTO v_vote_counts
+  FROM (
+    SELECT 
+      place_id,
+      COUNT(*) as vote_count
+    FROM session_swipes
+    WHERE session_id = p_session_id
+      AND round = p_round_number
+      AND place_id = ANY(p_candidate_place_ids)
+      AND direction = 'right'
+    GROUP BY place_id
+  ) AS counts;
+  
+  -- Find max votes
+  SELECT MAX((value::text)::integer) INTO v_max_votes
+  FROM jsonb_each_text(COALESCE(v_vote_counts, '{}'::jsonb));
+  
+  -- Find winners (places with max votes)
+  SELECT array_agg(key) INTO v_winners
+  FROM jsonb_each_text(COALESCE(v_vote_counts, '{}'::jsonb))
+  WHERE (value::text)::integer = v_max_votes;
+  
+  -- Handle tie: use deterministic tiebreaker based on session_id hash
+  IF array_length(v_winners, 1) > 1 THEN
+    -- Use hashtext for deterministic selection
+    v_tie_breaker_value := abs(hashtext(p_session_id::text || v_winners[1]::text))::numeric % array_length(v_winners, 1);
+    v_winner_place_id := v_winners[v_tie_breaker_value::integer + 1];
+  ELSE
+    v_winner_place_id := v_winners[1];
+  END IF;
+  
+  -- Get winner place data
+  SELECT place_data INTO v_winner_place_data
+  FROM session_swipes
+  WHERE session_id = p_session_id
+    AND place_id = v_winner_place_id
+    AND round = p_round_number
+  LIMIT 1;
+  
+  -- Create or update match as final choice
+  INSERT INTO session_matches (session_id, place_id, place_data, is_final_choice)
+  VALUES (p_session_id, v_winner_place_id, v_winner_place_data, true)
+  ON CONFLICT (session_id, place_id)
+  DO UPDATE SET
+    is_final_choice = true,
+    place_data = EXCLUDED.place_data;
+  
+  -- Return winner info
+  RETURN jsonb_build_object(
+    'winner_place_id', v_winner_place_id,
+    'winner_place_data', v_winner_place_data,
+    'vote_count', v_max_votes,
+    'participant_count', v_participant_count,
+    'was_tie', array_length(v_winners, 1) > 1,
+    'tie_breaker_used', array_length(v_winners, 1) > 1
+  );
+END;
+$$;
+
+-- Add comment for documentation
+COMMENT ON FUNCTION public.tally_final_votes IS 'Atomically tallies final votes and determines winner. Uses deterministic tiebreaker for consistency across all participants.';
+
+-- Grant execute permissions
+GRANT EXECUTE ON FUNCTION public.check_and_complete_round(UUID, TEXT[], INTEGER, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.tally_final_votes(UUID, TEXT[], INTEGER) TO authenticated;
+

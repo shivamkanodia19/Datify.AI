@@ -1,11 +1,11 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Place } from "@/types/place";
 import SwipeCard from "./SwipeCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Heart, ArrowLeft, Sparkles } from "lucide-react";
+import { Heart, ArrowLeft, Sparkles, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import { useSwipeGameState, Match } from "@/hooks/useSwipeGameState";
@@ -14,6 +14,10 @@ import { VotingInterface } from "./swipe/VotingInterface";
 import { MatchResults } from "./swipe/MatchResults";
 import { WaitingForPlayers } from "./swipe/WaitingForPlayers";
 import { Confetti } from "./Confetti";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
+import { useRoundCompletion } from "@/hooks/useRoundCompletion";
+import { useProgressPersistence } from "@/hooks/useProgressPersistence";
+import { RoundCompletionResult } from "@/types/game";
 
 interface SwipeViewProps {
   sessionId: string;
@@ -24,18 +28,39 @@ interface SwipeViewProps {
 
 const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeViewProps) => {
   const { state, actions } = useSwipeGameState(recommendations);
-  
-  // Refs to prevent race conditions
-  const isCheckingRound = useRef(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const { saveProgress, loadProgress, clearProgress } = useProgressPersistence(sessionId);
   const hasVotedRef = useRef(false);
 
   // Initialize deck when recommendations change
   useEffect(() => {
     if (recommendations.length > 0 && state.deck.length === 0) {
-      actions.setDeck(recommendations);
+      // Try to load saved progress
+      const savedProgress = loadProgress();
+      if (savedProgress && savedProgress.deck.length > 0) {
+        // Restore saved progress if available
+        actions.setDeck(recommendations.filter(p => savedProgress.deck.includes(p.id)));
+        actions.setRound(savedProgress.round);
+        actions.setIndex(savedProgress.currentIndex);
+        toast.info(`Restored progress from round ${savedProgress.round}`);
+      } else {
+        actions.setDeck(recommendations);
+      }
     }
-  }, [recommendations, state.deck.length, actions]);
+  }, [recommendations, state.deck.length, actions, loadProgress]);
+  
+  // Save progress whenever it changes
+  useEffect(() => {
+    if (state.deck.length > 0 && !state.gameEnded && !state.showRoundSummary) {
+      saveProgress(state.round, state.currentIndex, state.deck.map(p => p.id));
+    }
+  }, [state.round, state.currentIndex, state.deck, state.gameEnded, state.showRoundSummary, saveProgress]);
+  
+  // Clear progress on game end
+  useEffect(() => {
+    if (state.gameEnded) {
+      clearProgress();
+    }
+  }, [state.gameEnded, clearProgress]);
 
   // Load participants and check if user is host
   useEffect(() => {
@@ -108,344 +133,176 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     }
   }, [sessionId, state.deck, state.round, actions]);
 
-  // Check round completion using RPC function
-  const checkRoundCompletion = useCallback(async () => {
-    if (isCheckingRound.current) return;
+  // Handle round completion result
+  const handleRoundComplete = useCallback((result: RoundCompletionResult) => {
+    // Update participant count from server response
+    if (result.participant_count !== state.participantCount) {
+      actions.setParticipants(
+        result.participant_count,
+        state.participantUserIds,
+        state.currentUserId,
+        state.isHost
+      );
+    }
+
+    // Build round matches from unanimous IDs
+    const roundMatches: Match[] = result.unanimous_matches
+      .map((placeId) => {
+        const place = state.deck.find((p) => p.id === placeId);
+        if (!place) return null;
+        return {
+          id: `match-${placeId}`,
+          place_id: placeId,
+          place_data: place,
+          is_final_choice: false,
+          like_count: result.participant_count,
+        };
+      })
+      .filter((m): m is Match => m !== null);
+
+    // Build advancing candidates
+    const advancingCandidates = result.advancing_places
+      .map((item) => {
+        const place = state.deck.find((p) => p.id === item.place_id);
+        if (!place) return null;
+        return place;
+      })
+      .filter((p): p is Place => p !== null)
+      .sort((a, b) => {
+        const aCount = result.advancing_places.find((ap) => ap.place_id === a.id)?.like_count || 0;
+        const bCount = result.advancing_places.find((ap) => ap.place_id === b.id)?.like_count || 0;
+        return bCount - aCount;
+      });
+
+    // Update swipe counts for display
+    const newSwipeCounts: Record<string, number> = {};
+    result.advancing_places.forEach((item) => {
+      newSwipeCounts[item.place_id] = item.like_count;
+    });
+    result.unanimous_matches.forEach((placeId) => {
+      newSwipeCounts[placeId] = result.participant_count;
+    });
+    actions.setSwipeCounts(newSwipeCounts);
+
+    // Store round matches and advancing candidates
+    actions.setRoundMatches(roundMatches);
+    actions.setAdvancingCandidates(advancingCandidates);
+    actions.setShowRoundSummary(true);
+    actions.setNextAction(result.next_action);
+
+    if (roundMatches.length > 0) {
+      toast.success(
+        `🎉 ${roundMatches.length} unanimous match${roundMatches.length > 1 ? "es" : ""} this round!`
+      );
+    }
+
+    // Handle next action
+    if (result.next_action === "end") {
+      actions.endGame(null);
+      toast.error("No agreement reached. Game ended.");
+    }
+  }, [state, actions]);
+
+  // Use round completion hook with optimistic locking
+  const { checkRoundCompletion } = useRoundCompletion({
+    sessionId,
+    onComplete: handleRoundComplete,
+  });
+
+  // Wrapper for checkRoundCompletion that respects game state
+  const triggerRoundCheck = useCallback(() => {
     if (state.showRoundSummary || state.isVoteMode || state.gameEnded) return;
     if (state.deck.length === 0) return;
-
-    isCheckingRound.current = true;
-
-    // Cancel previous check
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    try {
-      const deckPlaceIds = state.deck.map((p) => p.id);
-
-      const { data, error } = await supabase.rpc("check_and_complete_round", {
-        p_session_id: sessionId,
-        p_deck_place_ids: deckPlaceIds,
-        p_round_number: state.round,
-      });
-
-      if (signal.aborted) return;
-
-      if (error) {
-        console.error("Error checking round completion:", error);
-        return;
-      }
-
-      const result = data as any;
-      if (!result || !result.completed) {
-        return;
-      }
-
-      const parsedResult = result as {
-        completed: boolean;
-        participant_count: number;
-        unanimous_matches: string[];
-        advancing_places: Array<{
-          place_id: string;
-          like_count: number;
-          place_data: any;
-        }>;
-        eliminated_place_ids?: string[];
-      };
-
-      // Update participant count
-      if (parsedResult.participant_count !== state.participantCount) {
-        actions.setParticipants(
-          parsedResult.participant_count,
-          state.participantUserIds,
-          state.currentUserId,
-          state.isHost
-        );
-      }
-
-      // Build round matches from unanimous IDs
-      const roundMatches: Match[] = parsedResult.unanimous_matches
-        .map((placeId) => {
-          const place = state.deck.find((p) => p.id === placeId);
-          if (!place) return null;
-          return {
-            id: `match-${placeId}`,
-            place_id: placeId,
-            place_data: place,
-            is_final_choice: false,
-            like_count: parsedResult.participant_count,
-          };
-        })
-        .filter((m): m is Match => m !== null);
-
-      // Build advancing candidates
-      const advancingCandidates = result.advancing_places
-        .map((item) => {
-          const place = state.deck.find((p) => p.id === item.place_id);
-          if (!place) return null;
-          return place;
-        })
-        .filter((p): p is Place => p !== null)
-        .sort((a, b) => {
-          const aCount = result.advancing_places.find((ap) => ap.place_id === a.id)?.like_count || 0;
-          const bCount = result.advancing_places.find((ap) => ap.place_id === b.id)?.like_count || 0;
-          return bCount - aCount;
-        });
-
-      // Update swipe counts for display
-      const newSwipeCounts: Record<string, number> = {};
-      result.advancing_places.forEach((item) => {
-        newSwipeCounts[item.place_id] = item.like_count;
-      });
-      result.unanimous_matches.forEach((placeId) => {
-        newSwipeCounts[placeId] = result.participant_count;
-      });
-      actions.setSwipeCounts(newSwipeCounts);
-
-      // Store round matches and advancing candidates
-      actions.setRoundMatches(roundMatches);
-      actions.setAdvancingCandidates(advancingCandidates);
-      actions.setShowRoundSummary(true);
-
-      if (roundMatches.length > 0) {
-        toast.success(
-          `🎉 ${roundMatches.length} unanimous match${roundMatches.length > 1 ? "es" : ""} this round!`
-        );
-      }
-
-      // Determine next action based on results
-      if (advancingCandidates.length === 0 && roundMatches.length === 0) {
-        // No matches, no advancing - game ends
-        actions.setNextAction("end");
-        actions.endGame(null);
-        toast.error("No agreement reached. Game ended.");
-      } else if (advancingCandidates.length <= 2 && advancingCandidates.length > 0) {
-        // 1-2 candidates remaining - go to final vote
-        actions.setNextAction("vote");
-      } else if (advancingCandidates.length > 2) {
-        // More than 2 candidates - continue to next round
-        actions.setNextAction("nextRound");
-      } else {
-        // Edge case - end game
-        actions.setNextAction("end");
-        actions.endGame(null);
-      }
-    } catch (error: any) {
-      if (error.name !== "AbortError") {
-        console.error("Error in checkRoundCompletion:", error);
-      }
-    } finally {
-      isCheckingRound.current = false;
-    }
-  }, [sessionId, state, actions]);
-
-  // Tally final votes and determine winner
-  const tallyFinalVotes = useCallback(async () => {
-    const placeIds = state.advancingCandidates.map((p) => p.id);
-
-    const { data: votes } = await supabase
-      .from("session_swipes")
-      .select("place_id")
-      .eq("session_id", sessionId)
-      .eq("round", state.round)
-      .eq("direction", "right")
-      .in("place_id", placeIds);
-
-    if (!votes || votes.length === 0) {
-      toast.error("No votes recorded!");
-      return;
-    }
-
-    // Count votes
-    const voteCounts: Record<string, number> = {};
-    votes.forEach((v) => {
-      voteCounts[v.place_id] = (voteCounts[v.place_id] || 0) + 1;
-    });
-
-    // Find winner(s) - handle ties
-    const maxVotes = Math.max(...Object.values(voteCounts));
-    const winners = state.advancingCandidates.filter(
-      (p) => voteCounts[p.id] === maxVotes
-    );
-
-    // If tie between 2 options, use random tiebreaker
-    // For deterministic results across all participants, use a hash of the session ID
-    let winner: Place;
-    if (winners.length === 2) {
-      // Use session ID hash for deterministic random selection across all participants
-      // This ensures all participants see the same winner
-      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const randomValue = (hash % 100) / 100; // Convert to 0-1 range
-      winner = randomValue > 0.5 ? winners[0] : winners[1];
-      toast.info(`Tie detected! Randomly selected: ${winner.name}`);
-    } else if (winners.length > 2) {
-      // Multiple ties - still use deterministic selection
-      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const index = hash % winners.length;
-      winner = winners[index];
-      toast.info(`Multiple ties detected! Randomly selected: ${winner.name}`);
-    } else {
-      winner = winners[0];
-    }
-
-    // Create or update match as final choice
-    const winnerMatch = state.allMatches.find((m) => m.place_id === winner.id);
     
-    if (winnerMatch) {
-      // Update existing match
-      await supabase
-        .from("session_matches")
-        .update({ is_final_choice: true })
-        .eq("id", winnerMatch.id);
-    } else {
-      // Create new match
-      const { data: newMatch } = await supabase
-        .from("session_matches")
-        .insert({
-          session_id: sessionId,
-          place_id: winner.id,
-          place_data: winner as any,
-          is_final_choice: true,
-        })
-        .select()
+    const deckPlaceIds = state.deck.map((p) => p.id);
+    checkRoundCompletion(deckPlaceIds, state.round);
+  }, [state, checkRoundCompletion]);
+
+  // Unified real-time sync using hook
+  const { isConnected, isReconnecting } = useRealtimeSync({
+    sessionId,
+    onSessionUpdate: async (payload) => {
+      const newSession = payload.new as any;
+      
+      // Handle round advancement from host
+      if (newSession.current_round && newSession.current_round > state.round) {
+        actions.setRound(newSession.current_round);
+        // Trigger round check after round update
+        triggerRoundCheck();
+      }
+    },
+    onMatchUpdate: async (payload) => {
+      // Reload matches when they change
+      await loadMatches();
+      
+      // If final choice was set and game hasn't ended, end the game
+      const match = payload.new as any;
+      if (match.is_final_choice && !state.gameEnded) {
+        const winnerPlace = match.place_data as Place;
+        if (winnerPlace) {
+          actions.endGame(winnerPlace);
+          toast.success(`🎉 Winner selected: ${winnerPlace.name}!`);
+        }
+      }
+    },
+    onParticipantUpdate: async () => {
+      // Reload participants
+      const { data: sessionData } = await supabase
+        .from("sessions")
+        .select("created_by")
+        .eq("id", sessionId)
         .single();
 
-      if (newMatch) {
-        actions.addToAllMatches([{
-          id: newMatch.id,
-          place_id: winner.id,
-          place_data: winner,
-          is_final_choice: true,
-          like_count: voteCounts[winner.id] || 0,
-        }]);
-      }
-    }
+      const { data: participants } = await supabase
+        .from("session_participants")
+        .select("user_id")
+        .eq("session_id", sessionId);
 
-    toast.success(`🎉 Winner: ${winner.name} with ${voteCounts[winner.id]} votes!`);
-    actions.endGame(winner);
-  }, [sessionId, state, actions]);
+      const userIds = new Set<string>();
+      if (sessionData?.created_by) userIds.add(sessionData.created_by);
+      participants?.forEach((p) => userIds.add(p.user_id));
 
-  // Real-time subscriptions
-  useEffect(() => {
-    const channel = supabase
-      .channel(`session_updates_${sessionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "sessions",
-          filter: `id=eq.${sessionId}`,
-        },
-        async (payload) => {
-          const newSession = payload.new as any;
-          
-          // Handle round advancement from host
-          if (newSession.current_round && newSession.current_round > state.round) {
-            actions.setRound(newSession.current_round);
-            // Round advancement will be handled by checkRoundCompletion
-            checkRoundCompletion();
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "session_matches",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        async (payload) => {
-          // Reload matches when they change
-          await loadMatches();
-          
-          // If final choice was set and game hasn't ended, end the game
-          const match = payload.new as any;
-          if (match.is_final_choice && !state.gameEnded) {
-            const winnerPlace = match.place_data as Place;
-            if (winnerPlace) {
-              actions.endGame(winnerPlace);
-              toast.success(`🎉 Winner selected: ${winnerPlace.name}!`);
-            }
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "session_participants",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        async () => {
-          // Reload participants
-          const { data: sessionData } = await supabase
-            .from("sessions")
-            .select("created_by")
-            .eq("id", sessionId)
-            .single();
-
-          const { data: participants } = await supabase
-            .from("session_participants")
+      actions.setParticipants(
+        userIds.size,
+        Array.from(userIds),
+        state.currentUserId,
+        state.isHost
+      );
+    },
+    onSwipeInsert: async (payload) => {
+      await loadSwipeCounts();
+      
+      // If in vote mode, check if all participants have voted
+      if (state.isVoteMode && !state.gameEnded) {
+        const swipeData = payload.new as any;
+        if (swipeData.direction === 'right' && state.advancingCandidates.some(p => p.id === swipeData.place_id)) {
+          const { data: voteSwipes } = await supabase
+            .from("session_swipes")
             .select("user_id")
-            .eq("session_id", sessionId);
+            .eq("session_id", sessionId)
+            .eq("round", state.round)
+            .in("place_id", state.advancingCandidates.map((p) => p.id));
 
-          const userIds = new Set<string>();
-          if (sessionData?.created_by) userIds.add(sessionData.created_by);
-          participants?.forEach((p) => userIds.add(p.user_id));
-
-          actions.setParticipants(
-            userIds.size,
-            Array.from(userIds),
-            state.currentUserId,
-            state.isHost
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "session_swipes",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        async (payload) => {
-          await loadSwipeCounts();
-          
-          // If in vote mode, check if all participants have voted
-          if (state.isVoteMode && !state.gameEnded) {
-            const swipeData = payload.new as any;
-            if (swipeData.direction === 'right' && state.advancingCandidates.some(p => p.id === swipeData.place_id)) {
-              const { data: voteSwipes } = await supabase
-                .from("session_swipes")
-                .select("user_id")
-                .eq("session_id", sessionId)
-                .eq("round", state.round)
-                .in("place_id", state.advancingCandidates.map((p) => p.id));
-
-              const uniqueVoters = new Set(voteSwipes?.map((s: any) => s.user_id));
-              if (uniqueVoters.size >= state.participantCount && state.isHost) {
-                // All voted - tally results
-                tallyFinalVotes();
-              }
-            }
-          } else {
-            await checkRoundCompletion();
+          const uniqueVoters = new Set(voteSwipes?.map((s: any) => s.user_id));
+          if (uniqueVoters.size >= state.participantCount && state.isHost) {
+            // All voted - tally results using database function
+            tallyFinalVotes();
           }
         }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [sessionId, state.round, state.isVoteMode, state.gameEnded, state.advancingCandidates, state.participantCount, state.isHost, checkRoundCompletion, loadSwipeCounts, tallyFinalVotes, actions, state.currentUserId]);
+      } else {
+        // Trigger round check after swipe (debounced)
+        setTimeout(() => {
+          triggerRoundCheck();
+        }, 500);
+      }
+    },
+    onReconnect: () => {
+      toast.success("Reconnected to session!");
+    },
+    onDisconnect: () => {
+      toast.warning("Connection lost. Reconnecting...");
+    },
+  });
 
   // Load matches
   const loadMatches = useCallback(async () => {
@@ -489,12 +346,12 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   useEffect(() => {
     if (state.currentIndex >= state.deck.length && !state.showRoundSummary && !state.isVoteMode && !state.gameEnded) {
       const interval = setInterval(() => {
-        checkRoundCompletion();
+        triggerRoundCheck();
       }, 2000); // Check every 2 seconds
 
       return () => clearInterval(interval);
     }
-  }, [state.currentIndex, state.deck.length, state.showRoundSummary, state.isVoteMode, state.gameEnded, checkRoundCompletion]);
+  }, [state.currentIndex, state.deck.length, state.showRoundSummary, state.isVoteMode, state.gameEnded, triggerRoundCheck]);
 
   // Handle swipe
   const handleSwipe = useCallback(async (direction: "left" | "right") => {
@@ -542,6 +399,65 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     } finally {
       actions.setLoading(false);
     }
+  }, [sessionId, state, actions]);
+
+  // Tally final votes using database function (atomic and deterministic)
+  // Defined before handleVote to avoid forward reference
+  const tallyFinalVotes = useCallback(async () => {
+    if (!state.isHost) return; // Only host should tally to avoid duplicates
+    
+    const placeIds = state.advancingCandidates.map((p) => p.id);
+
+    // Use database function for atomic vote tallying with deterministic tiebreaker
+    const { data, error } = await supabase.rpc('tally_final_votes', {
+      p_session_id: sessionId,
+      p_candidate_place_ids: placeIds,
+      p_round_number: state.round,
+    });
+
+    if (error) {
+      console.error('Error tallying votes:', error);
+      toast.error('Failed to tally votes');
+      return;
+    }
+
+    if (!data) {
+      toast.error('No winner determined');
+      return;
+    }
+
+    const result = data as {
+      winner_place_id: string;
+      winner_place_data: Place;
+      vote_count: number;
+      participant_count: number;
+      was_tie: boolean;
+      tie_breaker_used: boolean;
+    };
+
+    const winner = result.winner_place_data;
+
+    // Show tie message if applicable
+    if (result.was_tie && result.tie_breaker_used) {
+      toast.info(`Tie detected! Randomly selected: ${winner.name}`);
+    }
+
+    // Update all matches with winner
+    const winnerMatch = state.allMatches.find((m) => m.place_id === winner.id);
+    
+    if (!winnerMatch) {
+      // Create new match entry in state
+      actions.addToAllMatches([{
+        id: `match-${winner.id}`,
+        place_id: winner.id,
+        place_data: winner,
+        is_final_choice: true,
+        like_count: result.vote_count,
+      }]);
+    }
+
+    toast.success(`🎉 Winner: ${winner.name} with ${result.vote_count} votes!`);
+    actions.endGame(winner);
   }, [sessionId, state, actions]);
 
   // Handle vote in final voting
@@ -661,67 +577,16 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
 
     actions.setLoading(true);
     try {
-      // Use RPC to check round completion
+      // Use round completion hook to check completion
       const deckPlaceIds = state.deck.map((p) => p.id);
-      const { data } = await supabase.rpc("check_and_complete_round", {
-        p_session_id: sessionId,
-        p_deck_place_ids: deckPlaceIds,
-        p_round_number: state.round,
-      });
-
-      const result = data as any;
-      if (result && result.completed) {
-        // Process same as normal round completion
-        const roundMatches: Match[] = result.unanimous_matches
-          .map((placeId: string) => {
-            const place = state.deck.find((p) => p.id === placeId);
-            if (!place) return null;
-            return {
-              id: `match-${placeId}`,
-              place_id: placeId,
-              place_data: place,
-              is_final_choice: false,
-              like_count: result.participant_count,
-            };
-          })
-          .filter((m: Match | null): m is Match => m !== null);
-
-        const advancingCandidates = result.advancing_places
-          .map((item: any) => state.deck.find((p) => p.id === item.place_id))
-          .filter((p: Place | undefined): p is Place => p !== undefined);
-
-        actions.setRoundMatches(roundMatches);
-        actions.setAdvancingCandidates(advancingCandidates);
-        actions.setShowRoundSummary(true);
-
-        if (advancingCandidates.length <= 2 && advancingCandidates.length > 0) {
-          actions.setNextAction("vote");
-        } else if (advancingCandidates.length > 2) {
-          actions.setNextAction("nextRound");
-        } else {
-          actions.setNextAction("end");
-        }
-
-        // Update session round
-        await supabase
-          .from("sessions")
-          .update({
-            current_round: state.round + 1,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", sessionId);
-
-        toast.success("Round forced to end!");
-      } else {
-        toast.error("Round not ready to advance yet");
-      }
+      checkRoundCompletion(deckPlaceIds, state.round);
     } catch (error) {
       console.error("Error forcing round advance:", error);
       toast.error("Failed to advance round");
     } finally {
       actions.setLoading(false);
     }
-  }, [sessionId, state, actions]);
+  }, [sessionId, state, checkRoundCompletion, actions]);
 
   const currentPlace = state.deck[state.currentIndex];
   const progressPercent = state.deck.length > 0 ? (state.currentIndex / state.deck.length) * 100 : 0;
@@ -732,16 +597,35 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       <Confetti trigger={state.gameEnded && state.finalWinner !== null} />
 
       {/* Header */}
-      <div className="flex items-center justify-between max-w-md mx-auto">
+      <div className="flex items-center justify-between max-w-md mx-auto gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <div className="text-center">
+        <div className="text-center flex-1">
           <p className="text-sm font-medium">Session Code</p>
           <Badge variant="secondary" className="text-lg">
             {sessionCode}
           </Badge>
+        </div>
+        {/* Connection Status */}
+        <div className="flex items-center gap-1">
+          {isConnected ? (
+            <Badge variant="outline" className="text-xs border-green-500 text-green-700 bg-green-50 flex items-center">
+              <Wifi className="w-3 h-3 mr-1" />
+              Connected
+            </Badge>
+          ) : isReconnecting ? (
+            <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-700 bg-yellow-50 flex items-center">
+              <WifiOff className="w-3 h-3 mr-1 animate-pulse" />
+              Reconnecting...
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs border-red-500 text-red-700 bg-red-50 flex items-center">
+              <WifiOff className="w-3 h-3 mr-1" />
+              Disconnected
+            </Badge>
+          )}
         </div>
       </div>
 
