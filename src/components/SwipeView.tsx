@@ -139,11 +139,12 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
         return;
       }
 
-      if (!data || !data.completed) {
+      const result = data as any;
+      if (!result || !result.completed) {
         return;
       }
 
-      const result = data as {
+      const parsedResult = result as {
         completed: boolean;
         participant_count: number;
         unanimous_matches: string[];
@@ -156,9 +157,9 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       };
 
       // Update participant count
-      if (result.participant_count !== state.participantCount) {
+      if (parsedResult.participant_count !== state.participantCount) {
         actions.setParticipants(
-          result.participant_count,
+          parsedResult.participant_count,
           state.participantUserIds,
           state.currentUserId,
           state.isHost
@@ -166,7 +167,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       }
 
       // Build round matches from unanimous IDs
-      const roundMatches: Match[] = result.unanimous_matches
+      const roundMatches: Match[] = parsedResult.unanimous_matches
         .map((placeId) => {
           const place = state.deck.find((p) => p.id === placeId);
           if (!place) return null;
@@ -175,7 +176,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
             place_id: placeId,
             place_data: place,
             is_final_choice: false,
-            like_count: result.participant_count,
+            like_count: parsedResult.participant_count,
           };
         })
         .filter((m): m is Match => m !== null);
@@ -239,6 +240,92 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     } finally {
       isCheckingRound.current = false;
     }
+  }, [sessionId, state, actions]);
+
+  // Tally final votes and determine winner
+  const tallyFinalVotes = useCallback(async () => {
+    const placeIds = state.advancingCandidates.map((p) => p.id);
+
+    const { data: votes } = await supabase
+      .from("session_swipes")
+      .select("place_id")
+      .eq("session_id", sessionId)
+      .eq("round", state.round)
+      .eq("direction", "right")
+      .in("place_id", placeIds);
+
+    if (!votes || votes.length === 0) {
+      toast.error("No votes recorded!");
+      return;
+    }
+
+    // Count votes
+    const voteCounts: Record<string, number> = {};
+    votes.forEach((v) => {
+      voteCounts[v.place_id] = (voteCounts[v.place_id] || 0) + 1;
+    });
+
+    // Find winner(s) - handle ties
+    const maxVotes = Math.max(...Object.values(voteCounts));
+    const winners = state.advancingCandidates.filter(
+      (p) => voteCounts[p.id] === maxVotes
+    );
+
+    // If tie between 2 options, use random tiebreaker
+    // For deterministic results across all participants, use a hash of the session ID
+    let winner: Place;
+    if (winners.length === 2) {
+      // Use session ID hash for deterministic random selection across all participants
+      // This ensures all participants see the same winner
+      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const randomValue = (hash % 100) / 100; // Convert to 0-1 range
+      winner = randomValue > 0.5 ? winners[0] : winners[1];
+      toast.info(`Tie detected! Randomly selected: ${winner.name}`);
+    } else if (winners.length > 2) {
+      // Multiple ties - still use deterministic selection
+      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const index = hash % winners.length;
+      winner = winners[index];
+      toast.info(`Multiple ties detected! Randomly selected: ${winner.name}`);
+    } else {
+      winner = winners[0];
+    }
+
+    // Create or update match as final choice
+    const winnerMatch = state.allMatches.find((m) => m.place_id === winner.id);
+    
+    if (winnerMatch) {
+      // Update existing match
+      await supabase
+        .from("session_matches")
+        .update({ is_final_choice: true })
+        .eq("id", winnerMatch.id);
+    } else {
+      // Create new match
+      const { data: newMatch } = await supabase
+        .from("session_matches")
+        .insert({
+          session_id: sessionId,
+          place_id: winner.id,
+          place_data: winner as any,
+          is_final_choice: true,
+        })
+        .select()
+        .single();
+
+      if (newMatch) {
+        actions.addToAllMatches([{
+          id: newMatch.id,
+          place_id: winner.id,
+          place_data: winner,
+          is_final_choice: true,
+          like_count: voteCounts[winner.id] || 0,
+        }]);
+      }
+    }
+
+    toast.success(`🎉 Winner: ${winner.name} with ${voteCounts[winner.id]} votes!`);
+    actions.endGame(winner);
   }, [sessionId, state, actions]);
 
   // Real-time subscriptions
@@ -378,10 +465,10 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
             .eq("direction", "right");
 
           return {
-            id: match.id,
-            place_id: match.place_id,
-            place_data: match.place_data as Place,
-            is_final_choice: match.is_final_choice,
+          id: match.id,
+          place_id: match.place_id,
+          place_data: match.place_data as unknown as Place,
+          is_final_choice: match.is_final_choice,
             like_count: count || 0,
           };
         })
@@ -523,92 +610,6 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     }
   }, [sessionId, state, actions, tallyFinalVotes]);
 
-  // Tally final votes and determine winner
-  const tallyFinalVotes = useCallback(async () => {
-    const placeIds = state.advancingCandidates.map((p) => p.id);
-
-    const { data: votes } = await supabase
-      .from("session_swipes")
-      .select("place_id")
-      .eq("session_id", sessionId)
-      .eq("round", state.round)
-      .eq("direction", "right")
-      .in("place_id", placeIds);
-
-    if (!votes || votes.length === 0) {
-      toast.error("No votes recorded!");
-      return;
-    }
-
-    // Count votes
-    const voteCounts: Record<string, number> = {};
-    votes.forEach((v) => {
-      voteCounts[v.place_id] = (voteCounts[v.place_id] || 0) + 1;
-    });
-
-    // Find winner(s) - handle ties
-    const maxVotes = Math.max(...Object.values(voteCounts));
-    const winners = state.advancingCandidates.filter(
-      (p) => voteCounts[p.id] === maxVotes
-    );
-
-    // If tie between 2 options, use random tiebreaker
-    // For deterministic results across all participants, use a hash of the session ID
-    let winner: Place;
-    if (winners.length === 2) {
-      // Use session ID hash for deterministic random selection across all participants
-      // This ensures all participants see the same winner
-      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const randomValue = (hash % 100) / 100; // Convert to 0-1 range
-      winner = randomValue > 0.5 ? winners[0] : winners[1];
-      toast.info(`Tie detected! Randomly selected: ${winner.name}`);
-    } else if (winners.length > 2) {
-      // Multiple ties - still use deterministic selection
-      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const index = hash % winners.length;
-      winner = winners[index];
-      toast.info(`Multiple ties detected! Randomly selected: ${winner.name}`);
-    } else {
-      winner = winners[0];
-    }
-
-    // Create or update match as final choice
-    const winnerMatch = state.allMatches.find((m) => m.place_id === winner.id);
-    
-    if (winnerMatch) {
-      // Update existing match
-      await supabase
-        .from("session_matches")
-        .update({ is_final_choice: true })
-        .eq("id", winnerMatch.id);
-    } else {
-      // Create new match
-      const { data: newMatch } = await supabase
-        .from("session_matches")
-        .insert({
-          session_id: sessionId,
-          place_id: winner.id,
-          place_data: winner as any,
-          is_final_choice: true,
-        })
-        .select()
-        .single();
-
-      if (newMatch) {
-        actions.addToAllMatches([{
-          id: newMatch.id,
-          place_id: winner.id,
-          place_data: winner,
-          is_final_choice: true,
-          like_count: voteCounts[winner.id] || 0,
-        }]);
-      }
-    }
-
-    toast.success(`🎉 Winner: ${winner.name} with ${voteCounts[winner.id]} votes!`);
-    actions.endGame(winner);
-  }, [sessionId, state, actions]);
-
   // Advance to next round
   const advanceToNextRound = useCallback(async () => {
     // Merge current round matches into all matches
@@ -668,9 +669,9 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
         p_round_number: state.round,
       });
 
-      if (data && data.completed) {
+      const result = data as any;
+      if (result && result.completed) {
         // Process same as normal round completion
-        const result = data as any;
         const roundMatches: Match[] = result.unanimous_matches
           .map((placeId: string) => {
             const place = state.deck.find((p) => p.id === placeId);
