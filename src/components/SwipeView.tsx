@@ -73,7 +73,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       // Check if host
       const { data: session } = await supabase
         .from("sessions")
-        .select("created_by, version")
+        .select("created_by, version, current_round")
         .eq("id", sessionId)
         .single();
 
@@ -81,6 +81,10 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
 
       if (session?.version) {
         actions.setSessionVersion(session.version);
+      }
+
+      if (session?.current_round) {
+        actions.setRound(session.current_round);
       }
 
       // Load participants
