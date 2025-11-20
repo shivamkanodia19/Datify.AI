@@ -2,6 +2,19 @@
 -- Phase 1: Fix Race Conditions in Round Completion
 -- ============================================================================
 
+-- Create round_results table to store outcomes of each round
+CREATE TABLE IF NOT EXISTS public.round_results (
+  session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
+  round_number INTEGER NOT NULL,
+  deck_place_ids TEXT[] NOT NULL,
+  unanimous_matches TEXT[] DEFAULT ARRAY[]::TEXT[],
+  advancing_place_ids TEXT[] DEFAULT ARRAY[]::TEXT[],
+  eliminated_place_ids TEXT[] DEFAULT ARRAY[]::TEXT[],
+  completed_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+  PRIMARY KEY (session_id, round_number)
+);
+
 -- Add version column to sessions table for optimistic locking
 ALTER TABLE public.sessions 
 ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
@@ -133,7 +146,7 @@ BEGIN
     SELECT 
       ss.place_id,
       COUNT(DISTINCT ss.user_id) as like_count,
-      MAX(ss.place_data) as place_data
+      MAX(ss.place_data::text)::jsonb as place_data
     FROM session_swipes ss
     WHERE ss.session_id = p_session_id
       AND ss.round = p_round_number
@@ -155,11 +168,11 @@ BEGIN
   );
   
   -- Determine next action based on results
-  IF COALESCE(array_length(v_advancing_places, 1), 0) = 0 AND COALESCE(array_length(v_unanimous_matches, 1), 0) = 0 THEN
+  IF COALESCE(jsonb_array_length(v_advancing_places), 0) = 0 AND COALESCE(array_length(v_unanimous_matches, 1), 0) = 0 THEN
     v_next_action := 'end';
-  ELSIF COALESCE(array_length(v_advancing_places, 1), 0) <= 2 AND COALESCE(array_length(v_advancing_places, 1), 0) > 0 THEN
+  ELSIF COALESCE(jsonb_array_length(v_advancing_places), 0) <= 2 AND COALESCE(jsonb_array_length(v_advancing_places), 0) > 0 THEN
     v_next_action := 'vote';
-  ELSIF COALESCE(array_length(v_advancing_places, 1), 0) > 2 THEN
+  ELSIF COALESCE(jsonb_array_length(v_advancing_places), 0) > 2 THEN
     v_next_action := 'nextRound';
   ELSE
     v_next_action := 'end';
