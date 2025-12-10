@@ -1,50 +1,4 @@
--- ============================================================================
--- Phase 1: Fix Race Conditions in Round Completion
--- ============================================================================
-
--- Create round_results table to store outcomes of each round
-CREATE TABLE IF NOT EXISTS public.round_results (
-  session_id UUID REFERENCES public.sessions(id) ON DELETE CASCADE,
-  round_number INTEGER NOT NULL,
-  deck_place_ids TEXT[] NOT NULL,
-  unanimous_matches TEXT[] DEFAULT ARRAY[]::TEXT[],
-  advancing_place_ids TEXT[] DEFAULT ARRAY[]::TEXT[],
-  eliminated_place_ids TEXT[] DEFAULT ARRAY[]::TEXT[],
-  completed_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  PRIMARY KEY (session_id, round_number)
-);
-
--- Add version column to sessions table for optimistic locking
-ALTER TABLE public.sessions 
-ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
-
--- Create index on version for better performance
-CREATE INDEX IF NOT EXISTS idx_sessions_version ON public.sessions(id, version);
-
--- Update trigger to increment version on update
-CREATE OR REPLACE FUNCTION public.increment_session_version()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  NEW.version = OLD.version + 1;
-  RETURN NEW;
-END;
-$$;
-
--- Drop existing trigger if exists
-DROP TRIGGER IF EXISTS trg_increment_session_version ON public.sessions;
-
--- Create trigger to auto-increment version
-CREATE TRIGGER trg_increment_session_version
-BEFORE UPDATE ON public.sessions
-FOR EACH ROW
-EXECUTE FUNCTION public.increment_session_version();
-
--- Improved check_and_complete_round with consistent return structure and optimistic locking
+-- Fix check_and_complete_round function to resolve MAX(jsonb) error
 CREATE OR REPLACE FUNCTION public.check_and_complete_round(
   p_session_id UUID,
   p_deck_place_ids TEXT[],
@@ -168,11 +122,11 @@ BEGIN
   );
   
   -- Determine next action based on results
-  IF COALESCE(jsonb_array_length(v_advancing_places), 0) = 0 AND COALESCE(array_length(v_unanimous_matches, 1), 0) = 0 THEN
+  IF COALESCE(array_length(v_advancing_places, 1), 0) = 0 AND COALESCE(array_length(v_unanimous_matches, 1), 0) = 0 THEN
     v_next_action := 'end';
-  ELSIF COALESCE(jsonb_array_length(v_advancing_places), 0) <= 2 AND COALESCE(jsonb_array_length(v_advancing_places), 0) > 0 THEN
+  ELSIF COALESCE(array_length(v_advancing_places, 1), 0) <= 2 AND COALESCE(array_length(v_advancing_places, 1), 0) > 0 THEN
     v_next_action := 'vote';
-  ELSIF COALESCE(jsonb_array_length(v_advancing_places), 0) > 2 THEN
+  ELSIF COALESCE(array_length(v_advancing_places, 1), 0) > 2 THEN
     v_next_action := 'nextRound';
   ELSE
     v_next_action := 'end';
@@ -228,102 +182,3 @@ EXCEPTION
     );
 END;
 $$;
-
--- Add comment for documentation
-COMMENT ON FUNCTION public.check_and_complete_round IS 'Atomically checks if all participants completed a round. Uses optimistic locking via version column to prevent race conditions. Returns consistent JSON structure with next_action field.';
-
--- Create function to tally final votes atomically
-CREATE OR REPLACE FUNCTION public.tally_final_votes(
-  p_session_id UUID,
-  p_candidate_place_ids TEXT[],
-  p_round_number INTEGER
-)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_participant_count INTEGER;
-  v_vote_counts JSONB;
-  v_max_votes INTEGER;
-  v_winners TEXT[];
-  v_winner_place_id TEXT;
-  v_winner_place_data JSONB;
-  v_tie_breaker_value NUMERIC;
-BEGIN
-  -- Lock session row
-  PERFORM 1 FROM sessions WHERE id = p_session_id FOR UPDATE;
-  
-  -- Get participant count
-  SELECT COUNT(DISTINCT user_id) INTO v_participant_count
-  FROM session_participants
-  WHERE session_id = p_session_id;
-  
-  -- Count votes for each candidate
-  SELECT jsonb_object_agg(place_id, vote_count) INTO v_vote_counts
-  FROM (
-    SELECT 
-      place_id,
-      COUNT(*) as vote_count
-    FROM session_swipes
-    WHERE session_id = p_session_id
-      AND round = p_round_number
-      AND place_id = ANY(p_candidate_place_ids)
-      AND direction = 'right'
-    GROUP BY place_id
-  ) AS counts;
-  
-  -- Find max votes
-  SELECT MAX((value::text)::integer) INTO v_max_votes
-  FROM jsonb_each_text(COALESCE(v_vote_counts, '{}'::jsonb));
-  
-  -- Find winners (places with max votes)
-  SELECT array_agg(key) INTO v_winners
-  FROM jsonb_each_text(COALESCE(v_vote_counts, '{}'::jsonb))
-  WHERE (value::text)::integer = v_max_votes;
-  
-  -- Handle tie: use deterministic tiebreaker based on session_id hash
-  IF array_length(v_winners, 1) > 1 THEN
-    -- Use hashtext for deterministic selection
-    v_tie_breaker_value := abs(hashtext(p_session_id::text || v_winners[1]::text))::numeric % array_length(v_winners, 1);
-    v_winner_place_id := v_winners[v_tie_breaker_value::integer + 1];
-  ELSE
-    v_winner_place_id := v_winners[1];
-  END IF;
-  
-  -- Get winner place data
-  SELECT place_data INTO v_winner_place_data
-  FROM session_swipes
-  WHERE session_id = p_session_id
-    AND place_id = v_winner_place_id
-    AND round = p_round_number
-  LIMIT 1;
-  
-  -- Create or update match as final choice
-  INSERT INTO session_matches (session_id, place_id, place_data, is_final_choice)
-  VALUES (p_session_id, v_winner_place_id, v_winner_place_data, true)
-  ON CONFLICT (session_id, place_id)
-  DO UPDATE SET
-    is_final_choice = true,
-    place_data = EXCLUDED.place_data;
-  
-  -- Return winner info
-  RETURN jsonb_build_object(
-    'winner_place_id', v_winner_place_id,
-    'winner_place_data', v_winner_place_data,
-    'vote_count', v_max_votes,
-    'participant_count', v_participant_count,
-    'was_tie', array_length(v_winners, 1) > 1,
-    'tie_breaker_used', array_length(v_winners, 1) > 1
-  );
-END;
-$$;
-
--- Add comment for documentation
-COMMENT ON FUNCTION public.tally_final_votes IS 'Atomically tallies final votes and determines winner. Uses deterministic tiebreaker for consistency across all participants.';
-
--- Grant execute permissions
-GRANT EXECUTE ON FUNCTION public.check_and_complete_round(UUID, TEXT[], INTEGER, INTEGER) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.tally_final_votes(UUID, TEXT[], INTEGER) TO authenticated;
-

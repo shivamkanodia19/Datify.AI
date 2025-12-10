@@ -74,7 +74,7 @@ export function useRoundCompletion({ sessionId, onComplete }: UseRoundCompletion
         if (result.version_mismatch) {
           console.warn('Version mismatch detected, refreshing session state');
           toast.warning('Session was updated. Refreshing...');
-          
+
           // Fetch latest session version and retry
           const { data: sessionData } = await supabase
             .from('sessions')

@@ -16,7 +16,6 @@ import { WaitingForPlayers } from "./swipe/WaitingForPlayers";
 import { Confetti } from "./Confetti";
 import { useRealtimeSync } from "@/hooks/useRealtimeSync";
 import { useRoundCompletion } from "@/hooks/useRoundCompletion";
-import { useProgressPersistence } from "@/hooks/useProgressPersistence";
 import { RoundCompletionResult } from "@/types/game";
 
 interface SwipeViewProps {
@@ -28,39 +27,7 @@ interface SwipeViewProps {
 
 const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeViewProps) => {
   const { state, actions } = useSwipeGameState(recommendations);
-  const { saveProgress, loadProgress, clearProgress } = useProgressPersistence(sessionId);
   const hasVotedRef = useRef(false);
-
-  // Initialize deck when recommendations change
-  useEffect(() => {
-    if (recommendations.length > 0 && state.deck.length === 0) {
-      // Try to load saved progress
-      const savedProgress = loadProgress();
-      if (savedProgress && savedProgress.deck.length > 0) {
-        // Restore saved progress if available
-        actions.setDeck(recommendations.filter(p => savedProgress.deck.includes(p.id)));
-        actions.setRound(savedProgress.round);
-        actions.setIndex(savedProgress.currentIndex);
-        toast.info(`Restored progress from round ${savedProgress.round}`);
-      } else {
-        actions.setDeck(recommendations);
-      }
-    }
-  }, [recommendations, state.deck.length, actions, loadProgress]);
-  
-  // Save progress whenever it changes
-  useEffect(() => {
-    if (state.deck.length > 0 && !state.gameEnded && !state.showRoundSummary) {
-      saveProgress(state.round, state.currentIndex, state.deck.map(p => p.id));
-    }
-  }, [state.round, state.currentIndex, state.deck, state.gameEnded, state.showRoundSummary, saveProgress]);
-  
-  // Clear progress on game end
-  useEffect(() => {
-    if (state.gameEnded) {
-      clearProgress();
-    }
-  }, [state.gameEnded, clearProgress]);
 
   // Load participants and check if user is host
   useEffect(() => {
@@ -73,11 +40,19 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       // Check if host
       const { data: session } = await supabase
         .from("sessions")
-        .select("created_by")
+        .select("created_by, version, current_round")
         .eq("id", sessionId)
         .single();
 
       const isHost = session?.created_by === user.id;
+
+      if (session?.version) {
+        actions.setSessionVersion(session.version);
+      }
+
+      if (session?.current_round) {
+        actions.setRound(session.current_round);
+      }
 
       // Load participants
       const { data: sessionData } = await supabase
@@ -213,9 +188,9 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   const triggerRoundCheck = useCallback(() => {
     if (state.showRoundSummary || state.isVoteMode || state.gameEnded) return;
     if (state.deck.length === 0) return;
-    
+
     const deckPlaceIds = state.deck.map((p) => p.id);
-    checkRoundCompletion(deckPlaceIds, state.round);
+    checkRoundCompletion(deckPlaceIds, state.round, state.sessionVersion);
   }, [state, checkRoundCompletion]);
 
   // Unified real-time sync using hook
@@ -223,18 +198,23 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     sessionId,
     onSessionUpdate: async (payload) => {
       const newSession = payload.new as any;
-      
+
       // Handle round advancement from host
       if (newSession.current_round && newSession.current_round > state.round) {
         actions.setRound(newSession.current_round);
         // Trigger round check after round update
         triggerRoundCheck();
       }
+
+      // Update session version for optimistic locking
+      if (newSession.version) {
+        actions.setSessionVersion(newSession.version);
+      }
     },
     onMatchUpdate: async (payload) => {
       // Reload matches when they change
       await loadMatches();
-      
+
       // If final choice was set and game hasn't ended, end the game
       const match = payload.new as any;
       if (match.is_final_choice && !state.gameEnded) {
@@ -271,7 +251,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
     },
     onSwipeInsert: async (payload) => {
       await loadSwipeCounts();
-      
+
       // If in vote mode, check if all participants have voted
       if (state.isVoteMode && !state.gameEnded) {
         const swipeData = payload.new as any;
@@ -322,10 +302,10 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
             .eq("direction", "right");
 
           return {
-          id: match.id,
-          place_id: match.place_id,
-          place_data: match.place_data as unknown as Place,
-          is_final_choice: match.is_final_choice,
+            id: match.id,
+            place_id: match.place_id,
+            place_data: match.place_data as unknown as Place,
+            is_final_choice: match.is_final_choice,
             like_count: count || 0,
           };
         })
@@ -405,15 +385,24 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   // Defined before handleVote to avoid forward reference
   const tallyFinalVotes = useCallback(async () => {
     if (!state.isHost) return; // Only host should tally to avoid duplicates
-    
+
     const placeIds = state.advancingCandidates.map((p) => p.id);
 
-    // Use database function for atomic vote tallying with deterministic tiebreaker
-    const { data, error } = await supabase.rpc('tally_final_votes', {
-      p_session_id: sessionId,
-      p_candidate_place_ids: placeIds,
-      p_round_number: state.round,
-    });
+    // TODO: Replace with database function for atomic vote tallying with deterministic tiebreaker
+    // const { data, error } = await supabase.rpc('tally_final_votes', {
+    //   p_session_id: sessionId,
+    //   p_candidate_place_ids: placeIds,
+    //   p_round_number: state.round,
+    // });
+
+    // Temporary client-side tallying (has race condition risks)
+    const { data: votes, error } = await supabase
+      .from("session_swipes")
+      .select("place_id, user_id")
+      .eq("session_id", sessionId)
+      .eq("round", state.round)
+      .eq("direction", "right")
+      .in("place_id", placeIds);
 
     if (error) {
       console.error('Error tallying votes:', error);
@@ -421,50 +410,79 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
       return;
     }
 
-    if (!data) {
-      toast.error('No winner determined');
+    if (!votes || votes.length === 0) {
+      toast.error('No votes recorded!');
       return;
     }
 
-    // Fix type casting with intermediate cast
-    const result = data as unknown as {
-      winner_place_id: string;
-      winner_place_data: Place;
-      vote_count: number;
-      participant_count: number;
-      was_tie: boolean;
-      tie_breaker_used: boolean;
-    };
+    // Count votes per place (counting unique users per place)
+    const voteCounts: Record<string, Set<string>> = {};
+    votes.forEach((v) => {
+      if (!voteCounts[v.place_id]) {
+        voteCounts[v.place_id] = new Set();
+      }
+      voteCounts[v.place_id].add(v.user_id);
+    });
 
-    const winner = result.winner_place_data;
+    const voteCountsMap: Record<string, number> = {};
+    Object.keys(voteCounts).forEach((placeId) => {
+      voteCountsMap[placeId] = voteCounts[placeId].size;
+    });
 
-    // Show tie message if applicable
-    if (result.was_tie && result.tie_breaker_used) {
+    // Find winner(s) - handle ties
+    const maxVotes = Math.max(...Object.values(voteCountsMap));
+    const winners = state.advancingCandidates.filter(
+      (p) => voteCountsMap[p.id] === maxVotes
+    );
+
+    // If tie, use deterministic random selection based on sessionId hash
+    let winner: Place;
+    let wasTie = false;
+    if (winners.length > 1) {
+      wasTie = true;
+      // Use session ID hash for deterministic random selection across all participants
+      const hash = sessionId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const index = hash % winners.length;
+      winner = winners[index];
       toast.info(`Tie detected! Randomly selected: ${winner.name}`);
-    }
-
-    // Update all matches with winner (database function already created the match)
-    const winnerMatch = state.allMatches.find((m) => m.place_id === winner.id);
-    
-    if (!winnerMatch) {
-      // Create new match entry in state (match already exists in DB)
-      actions.addToAllMatches([{
-        id: `match-${winner.id}`,
-        place_id: winner.id,
-        place_data: winner,
-        is_final_choice: true,
-        like_count: result.vote_count,
-      }]);
     } else {
-      // Update existing match in state
-      actions.addToAllMatches([{
-        ...winnerMatch,
-        is_final_choice: true,
-        like_count: result.vote_count,
-      }]);
+      winner = winners[0];
     }
 
-    toast.success(`🎉 Winner: ${winner.name} with ${result.vote_count} votes!`);
+    // Create or update match as final choice
+    const winnerMatch = state.allMatches.find((m) => m.place_id === winner.id);
+
+    if (winnerMatch) {
+      // Update existing match
+      await supabase
+        .from("session_matches")
+        .update({ is_final_choice: true })
+        .eq("id", winnerMatch.id);
+    } else {
+      // Create new match
+      const { data: newMatch } = await supabase
+        .from("session_matches")
+        .insert({
+          session_id: sessionId,
+          place_id: winner.id,
+          place_data: winner as unknown as any,
+          is_final_choice: true,
+        })
+        .select()
+        .single();
+
+      if (newMatch) {
+        actions.addToAllMatches([{
+          id: newMatch.id,
+          place_id: winner.id,
+          place_data: winner,
+          is_final_choice: true,
+          like_count: voteCountsMap[winner.id] || 0,
+        }]);
+      }
+    }
+
+    toast.success(`🎉 Winner: ${winner.name} with ${voteCountsMap[winner.id]} votes!`);
     actions.endGame(winner);
   }, [sessionId, state, actions]);
 
@@ -599,6 +617,17 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
   const currentPlace = state.deck[state.currentIndex];
   const progressPercent = state.deck.length > 0 ? (state.currentIndex / state.deck.length) * 100 : 0;
 
+  // Handle back button with confirmation
+  const handleBack = useCallback(() => {
+    if (!state.gameEnded) {
+      const confirmed = window.confirm(
+        "Are you sure you want to leave? Your progress in this session will be lost and other players are waiting for you!"
+      );
+      if (!confirmed) return;
+    }
+    onBack();
+  }, [state.gameEnded, onBack]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[hsl(200,90%,95%)] via-[hsl(320,80%,95%)] to-[hsl(340,80%,95%)] p-4 space-y-6">
       {/* Confetti for winner */}
@@ -606,7 +635,7 @@ const SwipeView = ({ sessionId, sessionCode, recommendations, onBack }: SwipeVie
 
       {/* Header */}
       <div className="flex items-center justify-between max-w-md mx-auto gap-2">
-        <Button variant="ghost" onClick={onBack}>
+        <Button variant="ghost" onClick={handleBack}>
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back
         </Button>

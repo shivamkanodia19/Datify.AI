@@ -34,6 +34,34 @@ export function useRealtimeSync({
   const [isConnected, setIsConnected] = useState(true);
   const [isSubscribed, setIsSubscribed] = useState(false);
 
+  // Use refs for callbacks to avoid unnecessary re-subscriptions
+  const onSessionUpdateRef = useRef(onSessionUpdate);
+  const onMatchUpdateRef = useRef(onMatchUpdate);
+  const onParticipantUpdateRef = useRef(onParticipantUpdate);
+  const onSwipeInsertRef = useRef(onSwipeInsert);
+  const onPresenceLeaveRef = useRef(onPresenceLeave);
+  const onReconnectRef = useRef(onReconnect);
+  const onDisconnectRef = useRef(onDisconnect);
+
+  // Update refs when props change
+  useEffect(() => {
+    onSessionUpdateRef.current = onSessionUpdate;
+    onMatchUpdateRef.current = onMatchUpdate;
+    onParticipantUpdateRef.current = onParticipantUpdate;
+    onSwipeInsertRef.current = onSwipeInsert;
+    onPresenceLeaveRef.current = onPresenceLeave;
+    onReconnectRef.current = onReconnect;
+    onDisconnectRef.current = onDisconnect;
+  }, [
+    onSessionUpdate,
+    onMatchUpdate,
+    onParticipantUpdate,
+    onSwipeInsert,
+    onPresenceLeave,
+    onReconnect,
+    onDisconnect,
+  ]);
+
   const cleanup = useCallback(() => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
@@ -67,7 +95,7 @@ export function useRealtimeSync({
           filter: `id=eq.${sessionId}`,
         },
         (payload) => {
-          onSessionUpdate?.(payload);
+          onSessionUpdateRef.current?.(payload);
         }
       )
       .on(
@@ -79,7 +107,7 @@ export function useRealtimeSync({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
-          onMatchUpdate?.(payload);
+          onMatchUpdateRef.current?.(payload);
         }
       )
       .on(
@@ -91,7 +119,7 @@ export function useRealtimeSync({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
-          onParticipantUpdate?.(payload);
+          onParticipantUpdateRef.current?.(payload);
         }
       )
       .on(
@@ -103,22 +131,22 @@ export function useRealtimeSync({
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
-          onSwipeInsert?.(payload);
+          onSwipeInsertRef.current?.(payload);
         }
       )
       .on('presence', { event: 'leave' }, (payload) => {
-        onPresenceLeave?.(payload);
+        onPresenceLeaveRef.current?.(payload);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           reconnectAttempts.current = 0;
           setIsConnected(true);
           setIsSubscribed(true);
-          onReconnect?.();
+          onReconnectRef.current?.();
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setIsConnected(false);
           setIsSubscribed(false);
-          onDisconnect?.();
+          onDisconnectRef.current?.();
           // Exponential backoff reconnection
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
           if (reconnectAttempts.current < maxReconnectAttempts) {
@@ -137,17 +165,7 @@ export function useRealtimeSync({
     return () => {
       cleanup();
     };
-  }, [
-    sessionId,
-    onSessionUpdate,
-    onMatchUpdate,
-    onParticipantUpdate,
-    onSwipeInsert,
-    onPresenceLeave,
-    onReconnect,
-    onDisconnect,
-    cleanup,
-  ]);
+  }, [sessionId, cleanup]);
 
   useEffect(() => {
     const cleanupFn = subscribeToSession();
